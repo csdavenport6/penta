@@ -1,4 +1,6 @@
-use crate::card::{AbilityProcedureDef, CostDef, DeclarativeAbilityDef, ZoneKind};
+use crate::card::{
+    AbilityProcedureDef, ActivatedAbilityDef, CostDef, DeclarativeAbilityDef, ZoneKind,
+};
 
 use super::model::ResolvedOngoingEffectSnapshot;
 use super::semantics::{ability_locator_for_origin, catalog_ability};
@@ -41,28 +43,23 @@ pub(super) fn parse_ongoing_effect(
 ) -> Result<ResolvedOngoingEffect, String> {
     let ability = catalog_ability(&game.catalog, &snapshot.ability)
         .ok_or("ongoing effect ability locator is absent from this catalog")?;
-    let (definition, mana) = match ability.definition {
-        DeclarativeAbilityDef::Activated(definition) => (definition, false),
-        DeclarativeAbilityDef::ActivatedMana(definition) => (definition, true),
-        _ => return Err("ongoing effect locator does not identify an activated ability".into()),
-    };
-    if definition.procedure != AbilityProcedureDef::Shared
-        || definition.source_zones != [ZoneKind::Command]
-        || !definition.targets.is_empty()
-        || definition.modes.is_some()
-        || definition.activation_limit.is_some()
-        || definition.once_per_object
-        || definition.activation_permission != crate::card::ActivationPermissionDef::Controller
-        || definition.condition.is_some()
-        || definition.costs.iter().any(|cost| {
-            if mana {
-                !matches!(cost, CostDef::PayLife(_))
-            } else {
-                !matches!(cost, CostDef::Mana(cost) if !cost.variable_x)
-            }
-        })
-    {
-        return Err("ongoing effect does not identify a shared command-source ability".into());
+    match ability.definition {
+        DeclarativeAbilityDef::Activated(definition) => {
+            check_command_source_shape(&definition, false)?;
+        }
+        DeclarativeAbilityDef::ActivatedMana(definition) => {
+            check_command_source_shape(&definition, true)?;
+        }
+        // A replacement carried by an effect object (Yawgmoth's Will, Gaea's
+        // Will, Forgotten Cellar) is never activated, so it has no activation
+        // shape to check.
+        DeclarativeAbilityDef::Replacement(_) => {}
+        _ => {
+            return Err(
+                "ongoing effect locator identifies an ability kind that cannot be an ongoing effect"
+                    .into(),
+            );
+        }
     }
     let origin = ability_origin_from_snapshot(snapshot.origin);
     if !super::semantics::ability_locator_matches_origin(&snapshot.ability, origin) {
@@ -88,4 +85,29 @@ pub(super) fn parse_ongoing_effect(
         context: parse_effect_resolution_context(snapshot.context.clone())?,
         expiration,
     })
+}
+
+/// An activated ability carried by an effect object is activated from the
+/// command zone by its controller, for mana alone (or life alone, when it is a
+/// mana ability).
+fn check_command_source_shape(definition: &ActivatedAbilityDef, mana: bool) -> Result<(), String> {
+    if definition.procedure != AbilityProcedureDef::Shared
+        || definition.source_zones != [ZoneKind::Command]
+        || !definition.targets.is_empty()
+        || definition.modes.is_some()
+        || definition.activation_limit.is_some()
+        || definition.once_per_object
+        || definition.activation_permission != crate::card::ActivationPermissionDef::Controller
+        || definition.condition.is_some()
+        || definition.costs.iter().any(|cost| {
+            if mana {
+                !matches!(cost, CostDef::PayLife(_))
+            } else {
+                !matches!(cost, CostDef::Mana(cost) if !cost.variable_x)
+            }
+        })
+    {
+        return Err("ongoing effect does not identify a shared command-source ability".into());
+    }
+    Ok(())
 }

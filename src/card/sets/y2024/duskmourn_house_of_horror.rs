@@ -78,8 +78,12 @@ use crate::card::ObjectSetFilterDef;
 use crate::card::ObjectSetPredicateDef;
 use crate::card::ObjectValueAggregateDef;
 use crate::card::ObjectValueDef;
+use crate::card::OngoingEffectDef;
 use crate::card::PayOrDef;
 use crate::card::PerPlayerSelectionDef;
+use crate::card::PlayActionMatcherDef;
+use crate::card::PlayPermissionDef;
+use crate::card::PlayRestrictionDef;
 use crate::card::PlayerRefDef;
 use crate::card::PlayerRelation;
 use crate::card::PlayerRuleDef;
@@ -6814,15 +6818,88 @@ pub(in crate::card::sets) static VALGAVOTH_S_ONSLAUGHT: CardRecord = CardRecord:
 );
 
 // DSK 205 — Walk-In Closet // Forgotten Cellar
-// Audit: unsupported — Needs a temporary player-scoped graveyard-move replacement that persists
-// after this Room leaves the battlefield; granting the replacement to the Room makes it end too
-// early.
+// Both doors' abilities are named because the fully unlocked Room repeats them.
+const WALK_IN_CLOSET_ABILITY: AbilityDef = AbilityDef::static_ability(
+    "You may play lands from your graveyard.",
+    EffectDef::StaticApply {
+        recipient: EffectRecipientDef::Controller,
+        effect: AppliedEffectDef::Rule(AppliedRuleDef::MayPlay(PlayPermissionDef::new(
+            ObjectQueryDef::matching(
+                ObjectPredicateDef::Any,
+                &[ZoneKind::Graveyard],
+                PlayerRelation::You,
+            ),
+            PlayRestrictionDef::new(
+                PlayActionMatcherDef::PlayLand,
+                ObjectPredicateDef::HasType(CardType::Land),
+            ),
+        ))),
+    },
+);
+const FORGOTTEN_CELLAR_ABILITY: AbilityDef = AbilityDef::triggered(
+    "When you unlock this door, you may cast spells from your graveyard this turn, and if a card \
+     would be put into your graveyard from anywhere this turn, exile it instead.",
+    TriggerEventDef::DoorUnlocked,
+    EffectDef::Sequence(&[
+        EffectDef::Apply {
+            recipient: EffectRecipientDef::Controller,
+            effect: AppliedEffectDef::Rule(AppliedRuleDef::MayPlay(PlayPermissionDef::new(
+                ObjectQueryDef::matching(
+                    ObjectPredicateDef::Any,
+                    &[ZoneKind::Graveyard],
+                    PlayerRelation::You,
+                ),
+                PlayRestrictionDef::new(PlayActionMatcherDef::CastSpell, ObjectPredicateDef::Any),
+            ))),
+            duration: ResolvedEffectDurationDef::UntilEndOfTurn,
+        },
+        // The replacement belongs to the player for the turn, not to the Room, so it is created
+        // as an effect object that keeps exiling after the Room leaves the battlefield. "A card"
+        // excludes tokens.
+        EffectDef::CreateOngoingEffect(OngoingEffectDef::unbound(
+            &AbilityDef::replacement_for(
+                "If a card would be put into your graveyard from anywhere this turn, exile it \
+                 instead.",
+                ReplacementEventDef::AnyObjectWouldMove {
+                    object: ObjectPredicateDef::All(&[
+                        ObjectPredicateDef::OwnedBy(PlayerRelation::You),
+                        ObjectPredicateDef::Not(&ObjectPredicateDef::Token),
+                    ]),
+                    to: ZoneKind::Graveyard,
+                },
+                ReplacementEffectDef::MoveToZone(ZoneKind::Exile),
+            ),
+            ResolvedEffectDurationDef::UntilEndOfTurn,
+        )),
+    ]),
+);
 pub(in crate::card::sets) static WALK_IN_CLOSET_FORGOTTEN_CELLAR: CardRecord = CardRecord::new(
     "Walk-In Closet // Forgotten Cellar",
     "0adcd4e5-d542-4293-8774-ace2305ef820",
     "Miklós Ligeti",
-    CardRules::unsupported(),
-);
+    CardRules::new_enchantment(mana_cost!("{2}{G}"))
+        .with_subtypes(&["Room"])
+        .with_abilities(&[WALK_IN_CLOSET_ABILITY]),
+)
+.with_composition(|| {
+    const FRONT: CardRules = CardRules::new_enchantment(mana_cost!("{2}{G}"))
+        .with_subtypes(&["Room"])
+        .with_abilities(&[WALK_IN_CLOSET_ABILITY]);
+    const BACK: CardRules = CardRules::new_enchantment(mana_cost!("{3}{G}{G}"))
+        .with_subtypes(&["Room"])
+        .with_abilities(&[FORGOTTEN_CELLAR_ABILITY]);
+    const BOTH: CardRules = CardRules::new_enchantment(mana_cost!("{5}{G}{G}{G}"))
+        .with_subtypes(&["Room"])
+        .with_abilities(&[WALK_IN_CLOSET_ABILITY, FORGOTTEN_CELLAR_ABILITY]);
+    CardComposition::room(
+        "Walk-In Closet // Forgotten Cellar",
+        "Walk-In Closet",
+        FRONT,
+        "Forgotten Cellar",
+        BACK,
+        BOTH,
+    )
+});
 
 // DSK 206 — Wary Watchdog
 pub(in crate::card::sets) static WARY_WATCHDOG: CardRecord = CardRecord::new(

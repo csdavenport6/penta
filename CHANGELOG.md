@@ -20,6 +20,17 @@ the bot-wire epoch.
 
 ## Unreleased
 
+- Implement Generous Plunderer, Inti, Seneschal of the Sun, Agatha's Soul
+  Cauldron, and Walk-In Closet // Forgotten Cellar with existing vocabulary,
+  leaving Deep-Cavern Bat and Ghost Vacuum as the Vintage Cube's only
+  whole-card unsupported rules. The three "when you do" and "exiled this way"
+  clauses are reflexive triggers, so their targets are chosen after the
+  optional step and they resolve even if the source has left. Forgotten
+  Cellar's exile replacement is a player-scoped ongoing effect that outlasts
+  the Room. Checkpoints now reconstruct a live replacement ongoing effect
+  (Yawgmoth's Will, Gaea's Will, Forgotten Cellar); restore previously
+  rejected it. The write side, protocol, and checkpoint versions are unchanged.
+
 - Reuse immutable rules across board queries: borrow printed rules and share
   bounded materializations of inline token, emblem, and face-down rules across
   game clones. Cache authored token/emblem locator discovery per catalog instead

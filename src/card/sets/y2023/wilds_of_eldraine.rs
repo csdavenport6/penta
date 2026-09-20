@@ -7,9 +7,11 @@ use crate::CardPartId;
 use crate::KeywordAbility;
 use crate::PlayOptionId;
 use crate::card::AbilityDef;
+use crate::card::AbilityOperationDef;
 use crate::card::AbilityPredicateDef;
 use crate::card::AbilityTargetDef;
 use crate::card::AbilityTargetPredicate;
+use crate::card::ActivatedAbilityCardsDef;
 use crate::card::ActivationTimingDef;
 use crate::card::AddManaEffectDef;
 use crate::card::AdditionalCostValueDef;
@@ -31,6 +33,7 @@ use crate::card::CardStructure;
 use crate::card::CardSupertype;
 use crate::card::CardType;
 use crate::card::CardTypeSet;
+use crate::card::CharacteristicOperationDef;
 use crate::card::ChoiceVisibilityDef;
 use crate::card::ChooseCardsFromCollectionDef;
 use crate::card::ChooseDef;
@@ -8883,14 +8886,100 @@ pub(in crate::card::sets) static WOODLAND_ACOLYTE: CardRecord = CardRecord::new(
 });
 
 // WOE 242 — Agatha's Soul Cauldron
-// Audit: unsupported — Needs a reflexive trigger with targets or modes chosen after its
-// preceding payment or event, retained even if the source has left the battlefield; choosing
-// them with the original ability changes response timing and target legality.
 pub(in crate::card::sets) static AGATHAS_SOUL_CAULDRON: CardRecord = CardRecord::new(
     "Agatha's Soul Cauldron",
     "019b51b0-e5c6-4208-922b-7736686dddcd",
     "Jason A. Engle",
-    CardRules::unsupported(),
+    CardRules::new_artifact(mana_cost!("{2}"))
+        .with_supertype(CardSupertype::Legendary)
+        .with_abilities(&[
+            AbilityDef::static_ability(
+                "You may spend mana as though it were mana of any color to activate abilities of \
+                 creatures you control.",
+                EffectDef::StaticApply {
+                    recipient: EffectRecipientDef::Controller,
+                    effect: AppliedEffectDef::Rule(
+                        AppliedRuleDef::MaySpendManaAsAnyColorForCreatureAbilities,
+                    ),
+                },
+            ),
+            AbilityDef::static_ability(
+                "Creatures you control with +1/+1 counters on them have all activated abilities of all \
+                 creature cards exiled with Agatha's Soul Cauldron.",
+                EffectDef::StaticApply {
+                    // Read every time the layer is walked, so a creature that loses its last
+                    // counter loses the abilities with it, whoever put the counter there.
+                    recipient: EffectRecipientDef::objects(ObjectSetDef::Query(
+                        ObjectQueryDef::matching(
+                            ObjectPredicateDef::All(&[
+                                ObjectPredicateDef::HasType(CardType::Creature),
+                                ObjectPredicateDef::HasCounter(CounterKind::PlusOnePlusOne),
+                            ]),
+                            &[ZoneKind::Battlefield],
+                            PlayerRelation::You,
+                        ),
+                    )),
+                    effect: AppliedEffectDef::Characteristic(CharacteristicOperationDef::Abilities(
+                        AbilityOperationDef::AddActivatedAbilitiesOf {
+                            cards: ActivatedAbilityCardsDef::LinkedExiles,
+                            object: ObjectPredicateDef::HasType(CardType::Creature),
+                        },
+                    )),
+                },
+            ),
+            AbilityDef::activated_with_targets(
+                "{T}: Exile target card from a graveyard. When a creature card is exiled this way, put a \
+                 +1/+1 counter on target creature you control.",
+                &[CostDef::TapSource],
+                // "Target card from a graveyard" reaches every graveyard, not only its
+                // controller's.
+                &[AbilityTargetDef::exactly_one(
+                    AbilityTargetPredicate::Object {
+                        object: ObjectPredicateDef::Any,
+                        zones: &[ZoneKind::Graveyard],
+                        controller: None,
+                        owner: None,
+                    },
+                )],
+                EffectDef::ExileLinkedToSource {
+                    object: EffectRecipientDef::Target(TargetIndex::PRIMARY),
+                    face_down: false,
+                    until_source_leaves: false,
+                    then: Some(&EffectDef::IfCondition {
+                        // "Exiled this way" is asked of the card the activation named, followed
+                        // to wherever it went: a creature card that a replacement sent
+                        // somewhere other than exile was not exiled, and grows nothing.
+                        condition: &TriggerConditionDef::TargetMatches {
+                            slot: TargetIndex::PRIMARY,
+                            object: ObjectPredicateDef::All(&[
+                                ObjectPredicateDef::HasType(CardType::Creature),
+                                ObjectPredicateDef::InZone(ZoneKind::Exile),
+                            ]),
+                        },
+                        // The counter names its creature only as it goes on the stack, after
+                        // the exile, and no longer needs the Cauldron to be there.
+                        then: &EffectDef::ReflexiveTrigger(&AbilityDef::triggered_with_targets(
+                            "When a creature card is exiled this way, put a +1/+1 counter on target \
+                             creature you control.",
+                            TriggerEventDef::Reflexive,
+                            &[AbilityTargetDef::exactly_one(
+                                AbilityTargetPredicate::Object {
+                                    object: ObjectPredicateDef::HasType(CardType::Creature),
+                                    zones: &[ZoneKind::Battlefield],
+                                    controller: Some(PlayerRelation::You),
+                                    owner: None,
+                                },
+                            )],
+                            EffectDef::AddCounters {
+                                object: EffectRecipientDef::Target(TargetIndex::PRIMARY),
+                                kind: CounterKind::PlusOnePlusOne,
+                                amount: ValueDef::Constant(1),
+                            },
+                        )),
+                    }),
+                },
+            ),
+        ]),
 );
 
 // WOE 243 — Candy Trail

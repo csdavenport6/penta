@@ -51,6 +51,7 @@ use crate::card::DrawEventMatcherDef;
 use crate::card::EffectChoiceDef;
 use crate::card::EffectDef;
 use crate::card::EffectRecipientDef;
+use crate::card::ExilePlayDurationDef;
 use crate::card::GameActionDef;
 use crate::card::IfNoObjectsDef;
 use crate::card::InstalledTriggerDef;
@@ -3970,14 +3971,79 @@ pub(in crate::card::sets) static IDOL_OF_THE_DEEP_KING: CardRecord = CardRecord:
 );
 
 // LCI 156 — Inti, Seneschal of the Sun
-// Audit: unsupported — Needs a payment-result reflexive trigger that selects the attacking
-// creature only after the optional discard succeeds and survives Inti leaving. The previous
-// declaration chose the target with the attack trigger, changing response and target timing.
 pub(in crate::card::sets) static INTI_SENESCHAL_OF_THE_SUN: CardRecord = CardRecord::new(
     "Inti, Seneschal of the Sun",
     "fa7a55aa-ae61-4933-b7a4-dcc55dac6fcd",
     "Victor Adame Minguez",
-    CardRules::unsupported(),
+    CardRules::new_creature(mana_cost!("{1}{R}"), &["Human", "Knight"], 2, 2)
+        .with_supertype(CardSupertype::Legendary)
+        .with_abilities(&[
+            AbilityDef::triggered(
+                "Whenever you attack, you may discard a card. When you do, put a +1/+1 counter on target \
+                 attacking creature. It gains trample until end of turn.",
+                TriggerEventDef::attack_declared(ObjectPredicateDef::Any, 1, None),
+                EffectDef::May {
+                    player: EffectRecipientDef::Controller,
+                    effect: &EffectDef::Discard {
+                        recipient: EffectRecipientDef::Controller,
+                        amount: ValueDef::Constant(1),
+                        selection: DiscardSelectionDef::RecipientChooses,
+                        then: Some(DiscardFollowUpDef {
+                            counted: ObjectPredicateDef::Any,
+                            bound: Some(crate::Binding!("discarded")),
+                            effect: &EffectDef::IfNoObjects(IfNoObjectsDef {
+                                input: ObjectSetDef::Binding(crate::Binding!("discarded")),
+                                if_empty: &EffectDef::None,
+                                otherwise: &EffectDef::ReflexiveTrigger(
+                                    &AbilityDef::triggered_with_targets(
+                                        "When you do, put a +1/+1 counter on target attacking creature. It \
+                                         gains trample until end of turn.",
+                                        TriggerEventDef::Reflexive,
+                                        &[AbilityTargetDef::exactly_one_permanent(
+                                            ObjectPredicateDef::All(&[
+                                                ObjectPredicateDef::HasType(CardType::Creature),
+                                                ObjectPredicateDef::Attacking,
+                                            ]),
+                                        )],
+                                        EffectDef::Sequence(&[
+                                            EffectDef::AddCounters {
+                                                object: EffectRecipientDef::Target(TargetIndex::PRIMARY),
+                                                kind: CounterKind::PlusOnePlusOne,
+                                                amount: ValueDef::Constant(1),
+                                            },
+                                            EffectDef::Apply {
+                                                recipient: EffectRecipientDef::Target(
+                                                    TargetIndex::PRIMARY,
+                                                ),
+                                                effect: AppliedEffectDef::add_ability(
+                                                    &abilities::trample(),
+                                                ),
+                                                duration: ResolvedEffectDurationDef::UntilEndOfTurn,
+                                            },
+                                        ]),
+                                    ),
+                                ),
+                            }),
+                        }),
+                    },
+                },
+            ),
+            AbilityDef::triggered(
+                "Whenever you discard one or more cards, exile the top card of your library. You may play \
+                 that card until your next end step.",
+                TriggerEventDef::DiscardedCards(PlayerRelation::You),
+                EffectDef::ExileTopOfLibraryToPlay {
+                    player: EffectRecipientDef::Controller,
+                    amount: ValueDef::Constant(1),
+                    free: false,
+                    face_down: false,
+                    duration: ExilePlayDurationDef::UntilYourNextEndStep,
+                    spend_any_color: false,
+                    play_condition: None,
+                    cast_only: false,
+                },
+            ),
+        ]),
 );
 
 // LCI 157 — Magmatic Galleon
