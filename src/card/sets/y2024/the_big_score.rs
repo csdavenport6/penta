@@ -36,6 +36,7 @@ use crate::card::DamageSourceMatcherDef;
 use crate::card::DiscardSelectionDef;
 use crate::card::EffectDef;
 use crate::card::EffectRecipientDef;
+use crate::card::IfNoObjectsDef;
 use crate::card::InstalledTriggerDef;
 use crate::card::ManaColor;
 use crate::card::ObjectChoiceBindingDef;
@@ -89,6 +90,9 @@ const FOOD_TOKEN: TokenCharacteristics = crate::card::tokens::food().with_art(Ca
     "280e3af6-7904-4214-8141-e145c48e2687",
     "Patrik Hell",
 ));
+const TREASURE_TOKEN: TokenCharacteristics = crate::card::tokens::treasure().with_art(
+    CardArt::new("7ec6f053-96f7-4e57-b2eb-4e7699a40a4f", "Monztre"),
+);
 
 // BIG 1 — Collector's Cage
 // Audit: unsupported — Needs counting distinct current powers among controlled creatures to
@@ -1168,14 +1172,69 @@ const HOSTILE_INVESTIGATOR_ALTERNATE_1: PrintingRecord = PrintingRecord::alterna
 );
 
 // BIG 41 — Generous Plunderer
-// Audit: unsupported — Needs a reflexive trigger created by accepting this particular upkeep
-// effect and retained after the Plunderer leaves; OptionalEffectTaken currently finds only
-// battlefield listeners, losing the targeted Treasure gift when the source is gone.
 pub(in crate::card::sets) static GENEROUS_PLUNDERER: CardRecord = CardRecord::new(
     "Generous Plunderer",
     "351eea06-f5be-4044-b3b3-cc6bf805abb1",
     "Josiah \"Jo\" Cameron",
-    CardRules::unsupported(),
+    CardRules::new_creature(mana_cost!("{1}{R}"), &["Human", "Rogue"], 2, 2).with_abilities(&[
+        abilities::menace(),
+        AbilityDef::triggered(
+            "At the beginning of your upkeep, you may create a Treasure token. \
+             When you do, target opponent creates a tapped Treasure token.",
+            TriggerEventDef::StepBegins {
+                step: TurnStepDef::Upkeep,
+                player: PlayerRelation::You,
+            },
+            EffectDef::May {
+                player: EffectRecipientDef::Controller,
+                effect: &EffectDef::CreateToken(
+                    CreateTokenDef::new(TokenDef::Literal(TREASURE_TOKEN)).with_created_tokens(
+                        CreatedTokensDef {
+                            binding: crate::Binding!("treasure"),
+                            then: &EffectDef::IfNoObjects(IfNoObjectsDef {
+                                input: ObjectSetDef::Binding(crate::Binding!("treasure")),
+                                if_empty: &EffectDef::None,
+                                // The gift is queued by the Treasure actually made, names its
+                                // opponent only as it goes on the stack, and no longer needs the
+                                // Plunderer to be there.
+                                otherwise: &EffectDef::ReflexiveTrigger(
+                                    &AbilityDef::triggered_with_targets(
+                                        "When you do, target opponent creates a tapped Treasure token.",
+                                        TriggerEventDef::Reflexive,
+                                        &[AbilityTargetDef::exactly_one(
+                                            AbilityTargetPredicate::Player(PlayerRelation::Opponent),
+                                        )],
+                                        EffectDef::CreateToken(
+                                            CreateTokenDef::new(TokenDef::Literal(TREASURE_TOKEN))
+                                                .entering_tapped()
+                                                .with_controller(PlayerRefDef::Target(
+                                                    TargetIndex::PRIMARY,
+                                                )),
+                                        ),
+                                    ),
+                                ),
+                            }),
+                        },
+                    ),
+                ),
+            },
+        ),
+        AbilityDef::triggered(
+            "Whenever this creature attacks, it deals damage to defending player equal to the number \
+             of artifacts they control.",
+            TriggerEventDef::attack_declared(ObjectPredicateDef::Source, 1, None),
+            // Counted as the trigger resolves, which is what turns the Treasure handed over on
+            // the upkeep into damage on the attack.
+            EffectDef::damage(
+                EffectRecipientDef::Opponent,
+                ValueDef::CountMatchingObjects(&ObjectQueryDef::matching(
+                    ObjectPredicateDef::HasType(CardType::Artifact),
+                    &[ZoneKind::Battlefield],
+                    PlayerRelation::Opponent,
+                )),
+            ),
+        ),
+    ]),
 );
 
 // BIG 42 — Legion Extruder (alternate printing)

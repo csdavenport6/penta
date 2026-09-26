@@ -233,3 +233,64 @@ fn it_all_ends_with_the_turn() {
         "and so is the exiling",
     );
 }
+
+/// A checkpoint taken mid-turn carries the exile clause with it. The effect
+/// object holds a replacement ability rather than an activated one, and the
+/// rebuilt game still exiles a dying creature and still lets go at cleanup.
+#[test]
+fn a_checkpoint_mid_turn_keeps_the_replacement() {
+    let (mut game, will) = staged(&[], 3);
+    let doomed = game
+        .put_onto_battlefield(PlayerId::One, cards::GRIZZLY_BEARS)
+        .expect("cataloged");
+    let survivor = game
+        .put_onto_battlefield(PlayerId::One, cards::SAVANNAH_LIONS)
+        .expect("cataloged");
+    drain_pending(&mut game);
+    resolve_will(&mut game, will);
+    assert_eq!(game.ongoing_effects.len(), 1, "the replacement is live");
+
+    let (wire, hidden) = checkpoint_fixture(&game, PlayerId::One);
+    assert_eq!(
+        wire["checkpoint"]["hasDeferredState"],
+        serde_json::Value::Bool(false),
+        "the replacement has stable catalog semantics",
+    );
+    let mut rebuilt =
+        Game::from_observation_checkpoint(game.catalog.clone(), game.format, &wire, &hidden, 4_242)
+            .expect("the replacement reconstructs");
+    assert_eq!(rebuilt.ongoing_effects, game.ongoing_effects);
+
+    rebuilt.damage_target_from(None, Some(Target::Permanent(doomed)), 5);
+    settle(&mut rebuilt);
+    assert!(
+        rebuilt.players[0]
+            .graveyard
+            .iter()
+            .all(|card| card.definition != cards::GRIZZLY_BEARS),
+        "the Bears did not reach the rebuilt graveyard",
+    );
+    assert!(
+        rebuilt.players[0]
+            .exile
+            .iter()
+            .any(|card| card.definition == cards::GRIZZLY_BEARS),
+        "the rebuilt effect exiled them",
+    );
+
+    rebuilt.finish_cleanup();
+    settle(&mut rebuilt);
+    assert!(
+        rebuilt.ongoing_effects.is_empty(),
+        "the rebuilt effect still ends with the turn",
+    );
+    rebuilt.damage_target_from(None, Some(Target::Permanent(survivor)), 5);
+    settle(&mut rebuilt);
+    assert!(
+        rebuilt.players[0]
+            .graveyard
+            .iter()
+            .any(|card| card.definition == cards::SAVANNAH_LIONS),
+        "and a creature dying afterwards reaches the graveyard",
+    );
+}
