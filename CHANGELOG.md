@@ -22,8 +22,8 @@ the bot-wire epoch.
 
 - Implement Generous Plunderer, Inti, Seneschal of the Sun, Agatha's Soul
   Cauldron, and Walk-In Closet // Forgotten Cellar with existing vocabulary,
-  leaving Deep-Cavern Bat and Ghost Vacuum as the Vintage Cube's only
-  whole-card unsupported rules. The three "when you do" and "exiled this way"
+  leaving Deep-Cavern Bat as the Vintage Cube's only card with whole-card
+  unsupported rules. The three "when you do" and "exiled this way"
   clauses are reflexive triggers, so their targets are chosen after the
   optional step and they resolve even if the source has left. Forgotten
   Cellar's exile replacement is a player-scoped ongoing effect that outlasts
