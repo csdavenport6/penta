@@ -160,17 +160,28 @@ ordinary model. The prepared compiler may recognize that structure and lower
 it independently; unsupported structures continue through the reference
 implementation.
 
-That engine shares a word with a mechanic and nothing else. *Prepare*, *prepare
-spell*, *preparation card*, and the *prepared* designation always mean CR 722:
-`CardRecord::new_prepare`, `AlternateSpellKind::Prepare`,
-`PermanentDesignationDef::Prepared`, the `enters_prepared` family of helpers,
-and `src/game/preparation.rs`. *Prepared engine*, *prepared program*, and
-*lowering* always mean `src/prepared_engine` and its host. When naming something
-new, use `prepare` or `preparation` for the mechanic and reserve a bare
-`prepared` for the printed designation; engine names say `prepared_engine`,
-`Prepared<Thing>` for a lowered artifact, or `lowered`. `CardRecord::new_prepare`
-is therefore an ordinary card-layout constructor like `new_dfc`, not one of the
-execution-path constructors ruled out above.
+That engine shares a word with a mechanic and nothing else, so keep the two
+vocabularies apart:
+
+- **The prepare mechanic (CR 722)** is named `prepare` or `preparation`: a
+  preparation card, its prepare spell, `CardRecord::new_prepare`,
+  `AlternateSpellKind::Prepare`, and `src/game/preparation.rs`. It says
+  *prepared* only where the rules print that word, and then always names the
+  thing that is prepared: the designation on a permanent
+  (`PermanentDesignationDef::Prepared`, `enters_prepared`, `become_prepared`)
+  or the spell copy it produces (`prepared_spell_copies`,
+  `prepared_cast_permission`).
+- **The prepared engine** is `src/prepared_engine` and its host in
+  `src/game/prepared_host.rs`. Its names say `prepared_engine` or name the
+  lowered artifact: a `Prepared<Thing>` type, a prepared program, predicate,
+  query, lane, or damage plan.
+
+A new name never uses `prepared` on its own. A mechanic name says which
+permanent, spell, or copy is prepared; an engine name says which artifact was
+lowered. In prose and test names, write "prepare card" or "prepared permanent"
+for the mechanic and "prepared engine" or "engine mode" for the engine.
+`CardRecord::new_prepare` is therefore an ordinary card-layout constructor like
+`new_dfc`, not one of the execution-path constructors ruled out above.
 
 ## Extension boundaries
 
@@ -802,7 +813,8 @@ card that prints its own name instead of "this creature" keeps the helper and
 adds `.override_text(...)`. `become_prepared` and `become_unprepared` are
 effects: compose them into whatever trigger, activation, or payment the card
 prints, with `EffectRecipientDef::Source` for "this creature" or a target for
-"target creature becomes prepared". Reminder text is not authored.
+"target creature becomes prepared". The helpers' default text carries no
+reminder text.
 
 The designation and its exiled copy are the engine's job, not the card's:
 

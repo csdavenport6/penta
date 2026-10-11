@@ -26,9 +26,9 @@ static A_CREATURE: [AbilityTargetDef; 1] = [AbilityTargetDef::exactly_one_perman
 static TWO_CREATURES: [AbilityTargetDef; 2] = [A_CREATURE[0], A_CREATURE[0]];
 static ENTERS_PREPARED: [AbilityDef; 1] = [sos::enters_prepared()];
 
-/// A ready board whose catalog also holds `definitions`.
-fn game_with(prepared_engine: bool, definitions: Vec<CardDefinition>) -> Game {
-    let mut game = setup(prepared_engine);
+/// Adds `definitions` to the game's catalog, keeping its engine mode.
+fn add_definitions(game: &mut Game, definitions: Vec<CardDefinition>) {
+    let prepared_engine = game.prepared_engine_enabled();
     game.catalog = CardCatalog::new(
         game.catalog
             .definitions()
@@ -39,6 +39,13 @@ fn game_with(prepared_engine: bool, definitions: Vec<CardDefinition>) -> Game {
     .expect("the test definitions are valid catalog entries");
     game.prepared_engine = crate::prepared_engine::PreparedEngine::compile(&game.catalog);
     game.set_prepared_engine_enabled(prepared_engine);
+}
+
+/// A ready board in the chosen engine mode whose catalog also holds
+/// `definitions`.
+fn game_with(prepared_engine: bool, definitions: Vec<CardDefinition>) -> Game {
+    let mut game = setup(prepared_engine);
+    add_definitions(&mut game, definitions);
     game
 }
 
@@ -76,7 +83,7 @@ fn instant(
 }
 
 /// A 2/2 that enters prepared with `spell` as its prepare spell.
-fn prepared_mage(
+fn mage_entering_prepared(
     uuid: &str,
     name: &'static str,
     spell_name: &'static str,
@@ -184,9 +191,10 @@ fn take_an_upkeep(game: &mut Game) -> usize {
 fn an_upkeep_reprepare_trigger_prepares_its_creature_only_while_it_is_unprepared() {
     static ABILITIES: [AbilityDef; 1] = [sos::reprepare_at_upkeep()];
     for prepared_engine in [false, true] {
-        let bolt = rules_of(&setup(prepared_engine), cards::LIGHTNING_BOLT);
-        let mut game = game_with(
-            prepared_engine,
+        let mut game = setup(prepared_engine);
+        let bolt = rules_of(&game, cards::LIGHTNING_BOLT);
+        add_definitions(
+            &mut game,
             vec![prepare_card(
                 UPKEEP_MAGE,
                 &[
@@ -488,7 +496,7 @@ fn a_prepare_spell_that_fizzles_leaves_its_permanent_unprepared() {
     for prepared_engine in [false, true] {
         let mut game = game_with(
             prepared_engine,
-            vec![prepared_mage(
+            vec![mage_entering_prepared(
                 JOLT_MAGE,
                 "Jolt Mage",
                 "Test Jolt",
@@ -539,10 +547,11 @@ fn a_prepare_spell_that_fizzles_leaves_its_permanent_unprepared() {
 #[test]
 fn two_same_named_prepare_spell_copies_coexist_in_exile_and_belong_to_their_own_permanents() {
     for prepared_engine in [false, true] {
-        let recall = rules_of(&setup(prepared_engine), cards::ANCESTRAL_RECALL);
-        let mut game = game_with(
-            prepared_engine,
-            vec![prepared_mage(
+        let mut game = setup(prepared_engine);
+        let recall = rules_of(&game, cards::ANCESTRAL_RECALL);
+        add_definitions(
+            &mut game,
+            vec![mage_entering_prepared(
                 RECALL_STUDENT,
                 "Recall Student",
                 "Ancestral Recall",

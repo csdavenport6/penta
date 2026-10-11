@@ -17,9 +17,8 @@ enum CompositionSource {
         halves: &'static [(&'static str, CardRules); 2],
         fuse_cost: Option<super::ManaCost>,
     },
-    AlternateSpell {
+    Prepare {
         parts: &'static [(&'static str, CardRules); 2],
-        kind: AlternateSpellKind,
     },
 }
 
@@ -103,10 +102,7 @@ impl CardRecord {
             name,
             art: CardArt::new(scryfall_id, artist),
             rules: parts[0].1,
-            composition: Some(CompositionSource::AlternateSpell {
-                parts,
-                kind: AlternateSpellKind::Prepare,
-            }),
+            composition: Some(CompositionSource::Prepare { parts }),
         }
     }
 
@@ -165,8 +161,8 @@ impl CardRecord {
             Some(CompositionSource::Split { halves, fuse_cost }) => {
                 CardComposition::split(halves, fuse_cost)
             }
-            Some(CompositionSource::AlternateSpell { parts, kind }) => {
-                CardComposition::alternate_spell(parts, kind)
+            Some(CompositionSource::Prepare { parts }) => {
+                CardComposition::alternate_spell(parts, AlternateSpellKind::Prepare)
             }
         };
         CardDefinition {
