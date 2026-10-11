@@ -106,6 +106,57 @@ pub const SET: crate::card::CardSet = crate::card::CardSet::new(&crate::card::Ca
 pub(in crate::card::sets) const DEFINITION: crate::card::sets::SetDefinition =
     crate::card::sets::SetDefinition::new(SET, CARDS, ADDITIONAL_PRINTINGS, file!());
 
+/// "This creature enters prepared." (CR 722.3a). A permanent without a prepare
+/// spell ignores it. A card that prints its own name overrides the text.
+#[must_use]
+pub const fn enters_prepared() -> AbilityDef {
+    AbilityDef::as_enters(
+        "This creature enters prepared.",
+        ReplacementEffectDef::ModifyBattlefieldEntry(BattlefieldEntryModificationDef::Designation(
+            PermanentDesignationDef::Prepared,
+        )),
+    )
+}
+
+/// "... becomes prepared." Does nothing to a permanent that is already
+/// prepared or has no prepare spell (CR 722.3a).
+#[must_use]
+pub const fn become_prepared(object: EffectRecipientDef) -> EffectDef {
+    EffectDef::SetDesignation {
+        object,
+        designation: PermanentDesignationDef::Prepared,
+        present: true,
+    }
+}
+
+/// "... becomes unprepared." (CR 722.3b). The copy of its prepare spell in
+/// exile ceases to exist.
+#[must_use]
+pub const fn become_unprepared(object: EffectRecipientDef) -> EffectDef {
+    EffectDef::SetDesignation {
+        object,
+        designation: PermanentDesignationDef::Prepared,
+        present: false,
+    }
+}
+
+/// "At the beginning of your upkeep, if this creature isn't prepared, it
+/// becomes prepared."
+#[must_use]
+pub const fn reprepare_at_upkeep() -> AbilityDef {
+    AbilityDef::triggered_if(
+        "At the beginning of your upkeep, if this creature isn't prepared, it becomes prepared.",
+        TriggerEventDef::StepBegins {
+            step: TurnStepDef::Upkeep,
+            player: PlayerRelation::You,
+        },
+        &TriggerConditionDef::Not(&TriggerConditionDef::SourceHasDesignation(
+            PermanentDesignationDef::Prepared,
+        )),
+        become_prepared(EffectRecipientDef::Source),
+    )
+}
+
 const SPIRIT_TOKEN: TokenCharacteristics =
     TokenCharacteristics::creature(&["Spirit"], &[ManaColor::Red, ManaColor::White], 2, 2)
         .with_art(CardArt::new(
@@ -1231,77 +1282,32 @@ pub(in crate::card::sets) static ECHOCASTING_SYMPOSIUM: CardRecord = CardRecord:
 );
 
 // SOS 45 — Emeritus of Ideation // Ancestral Recall
-pub(in crate::card::sets) static EMERITUS_OF_IDEATION: CardRecord = CardRecord::new(
+pub(in crate::card::sets) static EMERITUS_OF_IDEATION: CardRecord = CardRecord::new_prepare(
     "Emeritus of Ideation // Ancestral Recall",
     "75961d36-acf6-425f-9698-0bf52af74f31",
     "Evyn Fong",
-    CardRules::new_creature(mana_cost!("{3}{U}{U}"), &["Human", "Wizard"], 5, 5).with_abilities(&[
-        abilities::flying(),
-        abilities::ward(&[CostDef::Mana(mana_cost!("{2}"))], "Ward {2}"),
-        AbilityDef::as_enters(
-            "This creature enters prepared.",
-            ReplacementEffectDef::ModifyBattlefieldEntry(
-                BattlefieldEntryModificationDef::Designation(PermanentDesignationDef::Prepared),
-            ),
+    &[
+        (
+            "Emeritus of Ideation",
+            CardRules::new_creature(mana_cost!("{3}{U}{U}"), &["Human", "Wizard"], 5, 5)
+                .with_abilities(&[
+                    abilities::flying(),
+                    abilities::ward(&[CostDef::Mana(mana_cost!("{2}"))], "Ward {2}"),
+                    enters_prepared(),
+                    AbilityDef::triggered(
+                        "Whenever this creature attacks, you may exile eight cards from your \
+                         graveyard. If you do, this creature becomes prepared.",
+                        TriggerEventDef::attacks(ObjectPredicateDef::Source),
+                        EffectDef::PayOr(PayOrDef::optional(
+                            &[crate::card::actions::choose_exile_from_graveyard(8).as_cost()],
+                            &become_prepared(EffectRecipientDef::Source),
+                        )),
+                    ),
+                ]),
         ),
-        AbilityDef::triggered(
-            "Whenever this creature attacks, you may exile eight cards from your \
-                graveyard. If you do, this creature becomes prepared.",
-            TriggerEventDef::attacks(ObjectPredicateDef::Source),
-            EffectDef::PayOr(PayOrDef::optional(
-                &[crate::card::actions::choose_exile_from_graveyard(8).as_cost()],
-                &EffectDef::SetDesignation {
-                    object: EffectRecipientDef::Source,
-                    designation: PermanentDesignationDef::Prepared,
-                    present: true,
-                },
-            )),
-        ),
-    ]),
-)
-.with_composition(|| {
-    use crate::card::{
-        AlternateSpellKind, CardComposition, CardEffectStatus, CardPart, CardStructure,
-        PlayOptionDef, SpellForm,
-    };
-    use crate::{CardPartId, PlayOptionId};
-    CardComposition {
-        parts: vec![
-            CardPart::new(
-                CardPartId::PRIMARY,
-                "Emeritus of Ideation",
-                EMERITUS_OF_IDEATION.rules,
-            ),
-            CardPart::new(
-                CardPartId(1),
-                "Ancestral Recall",
-                catalog_lea::ANCESTRAL_RECALL.rules,
-            ),
-        ],
-        structure: CardStructure::AlternateSpell {
-            main: CardPartId::PRIMARY,
-            alternate: CardPartId(1),
-            kind: AlternateSpellKind::Prepare,
-        },
-        play_options: vec![
-            PlayOptionDef::cast(
-                PlayOptionId::DEFAULT,
-                "Emeritus of Ideation",
-                SpellForm::Part(CardPartId::PRIMARY),
-                mana_cost!("{3}{U}{U}"),
-                CardEffectStatus::Implemented,
-            ),
-            PlayOptionDef::cast(
-                PlayOptionId(1),
-                "Ancestral Recall",
-                SpellForm::Part(CardPartId(1)),
-                mana_cost!("{U}"),
-                CardEffectStatus::Implemented,
-            ),
-        ],
-    }
-    .with_derived_spell_targets()
-});
+        ("Ancestral Recall", catalog_lea::ANCESTRAL_RECALL.rules),
+    ],
+);
 
 // SOS 46 — Encouraging Aviator // Jump
 // Audit: unsupported — Needs the prepared/unprepared designation and permission to cast a copy

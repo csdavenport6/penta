@@ -3,10 +3,10 @@ use crate::ids::{
 };
 
 use super::{
-    CardEffectStatus, CardPart, CardPrinting, CardRules, CardSet, CardStructure, CardSupertype,
-    CardType, CompanionDef, DeckConstructionDef, DeclarativeAbilityDef, DoubleFacedKind,
-    ImplementationStatus, ManaCost, ModeSetDef, PlayActionKind, PlayRestriction, PrintedManaCost,
-    SpellForm, TargetSlotDef,
+    AlternateSpellKind, CardEffectStatus, CardPart, CardPrinting, CardRules, CardSet,
+    CardStructure, CardSupertype, CardType, CompanionDef, DeckConstructionDef,
+    DeclarativeAbilityDef, DoubleFacedKind, ImplementationStatus, ManaCost, ModeSetDef,
+    PlayActionKind, PlayRestriction, PrintedManaCost, SpellForm, TargetSlotDef,
 };
 
 /// A named alternative to the cost supplied by a play option.
@@ -278,6 +278,44 @@ impl CardComposition {
                 kind,
             },
             play_options,
+        }
+        .with_derived_spell_targets()
+    }
+
+    /// Materializes a card printed with a secondary spell frame: a prepare
+    /// spell (CR 722), an Adventure, or an Omen. Each part is named and has
+    /// its own cast option; `kind` decides which of them a card in a given
+    /// zone may actually use.
+    #[must_use]
+    pub fn alternate_spell(
+        parts: &[(&'static str, CardRules); 2],
+        kind: AlternateSpellKind,
+    ) -> Self {
+        let [(main_name, main_rules), (alternate_name, alternate_rules)] = *parts;
+        Self {
+            parts: vec![
+                CardPart::new(CardPartId::PRIMARY, main_name, main_rules),
+                CardPart::new(CardPartId(1), alternate_name, alternate_rules),
+            ],
+            structure: CardStructure::AlternateSpell {
+                main: CardPartId::PRIMARY,
+                alternate: CardPartId(1),
+                kind,
+            },
+            play_options: vec![
+                Self::face_play_option(
+                    PlayOptionId::DEFAULT,
+                    CardPartId::PRIMARY,
+                    main_name,
+                    &main_rules,
+                ),
+                Self::face_play_option(
+                    PlayOptionId(1),
+                    CardPartId(1),
+                    alternate_name,
+                    &alternate_rules,
+                ),
+            ],
         }
         .with_derived_spell_targets()
     }

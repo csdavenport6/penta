@@ -57,6 +57,10 @@ deck-list lookup alias. Define both modeled faces together with
 `CardRecord::new_dfc` for a transforming card or `CardRecord::new_mdfc` for a
 modal double-faced card; pass their named face rules directly to those
 constructors so they can derive the parts, topology, and play options.
+A [preparation card](#preparation-cards) is declared the same way with
+`CardRecord::new_prepare`, listing the permanent and then its prepare spell in
+both the header and the name, such as `// SOS 45 — Emeritus of Ideation //
+Ancestral Recall`.
 The header immediately starts the declaration block. Inline card-local
 cost, target, effect, ability, predicate, query, value, and collection directly
 in the `CardRecord` and its ordered `CardRules` clauses by default. A named
@@ -149,11 +153,24 @@ Card-specific composition and contained exceptions belong at the narrowest usefu
 ownership level. See the [effect-program guide](effect-programs.md).
 
 Card declarations are oblivious to the
-[prepared engine](prepared-engine.md). Do not add preparation flags, prepared
-executors, optimization hints, or special constructors to a declaration or the
-card schema. Declare the semantic operation in the ordinary model. The
-prepared compiler may recognize that structure and lower it independently;
-unsupported structures continue through the reference implementation.
+[prepared engine](prepared-engine.md). Do not add lowering flags, prepared
+executors, optimization hints, or constructors that select an execution path
+to a declaration or the card schema. Declare the semantic operation in the
+ordinary model. The prepared compiler may recognize that structure and lower
+it independently; unsupported structures continue through the reference
+implementation.
+
+That engine shares a word with a mechanic and nothing else. *Prepare*, *prepare
+spell*, *preparation card*, and the *prepared* designation always mean CR 722:
+`CardRecord::new_prepare`, `AlternateSpellKind::Prepare`,
+`PermanentDesignationDef::Prepared`, the `enters_prepared` family of helpers,
+and `src/game/preparation.rs`. *Prepared engine*, *prepared program*, and
+*lowering* always mean `src/prepared_engine` and its host. When naming something
+new, use `prepare` or `preparation` for the mechanic and reserve a bare
+`prepared` for the printed designation; engine names say `prepared_engine`,
+`Prepared<Thing>` for a lowered artifact, or `lowered`. `CardRecord::new_prepare`
+is therefore an ordinary card-layout constructor like `new_dfc`, not one of the
+execution-path constructors ruled out above.
 
 ## Extension boundaries
 
@@ -729,6 +746,82 @@ pool after activation costs, before any entry produces mana. Doubling Cube
 composes six entries, each counting and adding one matching type. Production
 creates new mana carrying the producing effect's source and payload; the count
 query does not copy restrictions, spend effects, or source properties.
+
+## Preparation cards
+
+A preparation card (CR 722) is one card with two sets of characteristics: the
+permanent, and the prepare spell printed in its inset frame. Declare both parts
+in one record, permanent first, the way a double-faced card names its faces:
+
+```rust
+// SOS 45 — Emeritus of Ideation // Ancestral Recall
+pub(in crate::card::sets) static EMERITUS_OF_IDEATION: CardRecord = CardRecord::new_prepare(
+    "Emeritus of Ideation // Ancestral Recall",
+    "75961d36-acf6-425f-9698-0bf52af74f31",
+    "Evyn Fong",
+    &[
+        (
+            "Emeritus of Ideation",
+            CardRules::new_creature(mana_cost!("{3}{U}{U}"), &["Human", "Wizard"], 5, 5)
+                .with_abilities(&[abilities::flying(), enters_prepared() /* ... */]),
+        ),
+        ("Ancestral Recall", catalog_lea::ANCESTRAL_RECALL.rules),
+    ],
+);
+```
+
+The constructor derives both named parts, the `AlternateSpell` topology, and a
+cast option per part through `CardComposition::alternate_spell`; do not write a
+`with_composition` closure for a preparation card. The record name is the
+combined `permanent // spell` name, which is also what a deck list uses. Unlike
+a double-faced card, the permanent's name alone is not a lookup alias.
+
+Either part may be `CardRules::unsupported()`. Declare a card with both names
+as soon as it is inventoried, even when neither part has rules: the prepare
+spell's name is only nameable (CR 722.5) once the second part exists. The card
+stays unsupported until both parts are complete, and its audit comment names
+the gap in whichever part is missing.
+
+Give the prepare spell ordinary spell rules. When it is an existing card,
+reuse that record's rules as above. When one prepare spell is printed on
+several cards, share one rules constant in the set preamble so the copies
+agree.
+
+The Secrets of Strixhaven module, where the mechanic debuted, owns the
+recurring clauses. Later sets import them from there:
+
+| Printed clause | Helper |
+| --- | --- |
+| "This creature enters prepared." | `enters_prepared()` |
+| "... becomes prepared." | `become_prepared(recipient)` |
+| "... becomes unprepared." | `become_unprepared(recipient)` |
+| "At the beginning of your upkeep, if this creature isn't prepared, it becomes prepared." | `reprepare_at_upkeep()` |
+
+`enters_prepared()` and `reprepare_at_upkeep()` are whole ability clauses. A
+card that prints its own name instead of "this creature" keeps the helper and
+adds `.override_text(...)`. `become_prepared` and `become_unprepared` are
+effects: compose them into whatever trigger, activation, or payment the card
+prints, with `EffectRecipientDef::Source` for "this creature" or a target for
+"target creature becomes prepared". Reminder text is not authored.
+
+The designation and its exiled copy are the engine's job, not the card's:
+
+- A permanent without a prepare spell cannot become prepared, and a prepared
+  permanent cannot become prepared again. Neither helper needs a guard.
+- The copy in exile has only the printed prepare spell's characteristics, even
+  when the permanent is a token copy made with exceptions. It lasts while the
+  permanent is on the battlefield and prepared, and a permanent that phases in
+  prepared gets a new one.
+- Only the permanent's current controller may cast the copy, for the prepare
+  spell's own cost. Casting it unprepares the permanent whether or not the
+  spell later resolves. The physical card is never cast as its prepare spell.
+- Prepared is not a copiable value and does not depend on abilities. A
+  prepared permanent that loses its abilities or becomes a copy of something
+  else stays prepared.
+
+`src/game/tests/prepare_cards.rs` holds these rulings as regression tests in
+both engine modes. A new preparation card needs a card-level test only for
+what its own clauses add.
 
 ## Class level bars
 

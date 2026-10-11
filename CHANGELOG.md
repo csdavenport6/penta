@@ -20,6 +20,14 @@ the bot-wire epoch.
 
 ## Unreleased
 
+- Declare a preparation card (CR 722) as one record naming the permanent and
+  its prepare spell: `CardRecord::new_prepare`, backed by the public
+  `CardComposition::alternate_spell`. Either part may still be unsupported.
+  Secrets of Strixhaven owns the recurring clauses (`enters_prepared`,
+  `become_prepared`, `become_unprepared`, `reprepare_at_upkeep`). Emeritus of
+  Ideation moves onto them with an identical catalog entry; rules behavior and
+  protocol, checkpoint, and replay encodings are unchanged.
+
 - Implement Generous Plunderer, Inti, Seneschal of the Sun, Agatha's Soul
   Cauldron, and Walk-In Closet // Forgotten Cellar with existing vocabulary,
   leaving Deep-Cavern Bat as the Vintage Cube's only card with whole-card
