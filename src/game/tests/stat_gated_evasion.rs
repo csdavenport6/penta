@@ -64,3 +64,13 @@ fn an_opponents_tetsuko_does_not_help_your_creatures() {
     let (game, lions) = combat(cards::SAVANNAH_LIONS, PlayerId::Two);
     assert!(can_be_blocked(&game, lions));
 }
+
+/// Membership reads current stats: under a Crusade the Lions are a 3/2, and
+/// neither half of the "or" holds any longer.
+#[test]
+fn a_statically_pumped_creature_stops_qualifying() {
+    let (mut game, lions) = combat(cards::SAVANNAH_LIONS, PlayerId::One);
+    game.battlefield
+        .push(creature(10_003, cards::CRUSADE, PlayerId::One));
+    assert!(can_be_blocked(&game, lions));
+}

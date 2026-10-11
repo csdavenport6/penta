@@ -9,6 +9,9 @@ use crate::card::AddManaEffectDef;
 use crate::card::AppliedEffectDef;
 use crate::card::AppliedRuleDef;
 use crate::card::BattlefieldEntryModificationDef;
+use crate::card::BlockRestrictionDef;
+use crate::card::BlockRestrictionMatchDef;
+use crate::card::BlockRestrictionSubjectDef;
 use crate::card::CardRules;
 use crate::card::CardSupertype;
 use crate::card::CardType;
@@ -348,19 +351,29 @@ pub(in crate::card::sets) static TETSUKO_UMEZAWA_FUGITIVE: CardRecord = CardReco
         .with_supertype(CardSupertype::Legendary)
         .with_abilities(&[AbilityDef::static_ability(
             "Creatures you control with power or toughness 1 or less can't be blocked.",
+            // Authored on every would-be blocker rather than on the evasive
+            // creatures. A block restriction reads its counterpart's current
+            // stats as blockers are declared; static recipient membership is
+            // settled before static power and toughness effects apply, so it
+            // would keep a creature an anthem had grown past the limit.
             EffectDef::StaticApply {
                 recipient: EffectRecipientDef::matching_objects(
-                    ObjectPredicateDef::All(&[
-                        ObjectPredicateDef::HasType(CardType::Creature),
-                        ObjectPredicateDef::AnyOf(&[
-                            ObjectPredicateDef::PowerLessThan(ValueDef::Constant(2)),
-                            ObjectPredicateDef::ToughnessLessThan(ValueDef::Constant(2)),
-                        ]),
-                    ]),
+                    ObjectPredicateDef::HasType(CardType::Creature),
                     &[ZoneKind::Battlefield],
-                    PlayerRelation::You,
+                    PlayerRelation::Any,
                 ),
-                effect: AppliedEffectDef::Rule(AppliedRuleDef::CANNOT_BE_BLOCKED),
+                effect: AppliedEffectDef::Rule(AppliedRuleDef::BlockRestriction(
+                    BlockRestrictionDef::prohibit(
+                        BlockRestrictionSubjectDef::Blocker,
+                        BlockRestrictionMatchDef::Matching(ObjectPredicateDef::All(&[
+                            ObjectPredicateDef::ControlledBy(PlayerRelation::You),
+                            ObjectPredicateDef::AnyOf(&[
+                                ObjectPredicateDef::PowerLessThan(ValueDef::Constant(2)),
+                                ObjectPredicateDef::ToughnessLessThan(ValueDef::Constant(2)),
+                            ]),
+                        ])),
+                    ),
+                )),
             },
         )]),
 );
