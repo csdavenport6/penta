@@ -296,6 +296,7 @@ fn eternal_formats_share_cataloged_sets_but_have_distinct_ban_policies() {
         assert!(format.allows_set(sets::alpha::SET));
         assert!(format.allows_set(sets::modern_horizons_3::SET));
         assert!(format.allows_set(sets::fallout::SET));
+        assert!(format.allows_set(sets::reality_fracture::SET));
         assert!(!format.allows_set(CardSet::TOKEN));
         for name in ["Chaos Orb", "Contract from Below", "Crusade", "Power Play"] {
             assert!(format.is_banned(name), "{format}: {name}");

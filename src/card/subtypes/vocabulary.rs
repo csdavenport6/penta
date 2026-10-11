@@ -12,6 +12,8 @@ subtype_vocabulary! {
     Food => ["Food"], [Artifact];
     Fortification => ["Fortification"], [Artifact];
     Gold => ["Gold"], [Artifact];
+    // Added by the September 25, 2026 rules for Reality Fracture.
+    Heartwood => ["Heartwood"], [Artifact];
     Incubator => ["Incubator"], [Artifact];
     Infinity => ["Infinity"], [Artifact];
     Junk => ["Junk"], [Artifact];

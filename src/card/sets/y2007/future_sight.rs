@@ -38,6 +38,7 @@ use crate::card::ReplacementEffectDef;
 use crate::card::ResolvedEffectDurationDef;
 use crate::card::SpellResolutionDestinationDef;
 use crate::card::SubtypeDef;
+use crate::card::SumValueDef;
 use crate::card::TokenCharacteristics;
 use crate::card::TokenDef;
 use crate::card::TriggerConditionDef;
@@ -762,6 +763,30 @@ pub(in crate::card::sets) static EDGE_OF_AUTUMN: CardRecord = CardRecord::new(
     crate::card::CardRules::unsupported(),
 );
 
+// FUT 153 — Tarmogoyf
+pub(in crate::card::sets) static TARMOGOYF: CardRecord = CardRecord::new(
+    "Tarmogoyf",
+    "b6876d9e-0908-43ac-8542-09c7aa02b5ba",
+    "Justin Murray",
+    CardRules::new_creature(mana_cost!("{1}{G}"), &["Lhurgoyf"], 0, 1).with_abilities(&[
+        AbilityDef::static_ability(
+            "Tarmogoyf's power is equal to the number of card types among \
+             cards in all graveyards and its toughness is equal to that \
+             number plus 1.",
+            EffectDef::StaticApply {
+                recipient: EffectRecipientDef::Source,
+                effect: AppliedEffectDef::define_power_toughness(
+                    ValueDef::CardTypesAmongGraveyards(PlayerRelation::Any),
+                    ValueDef::Sum(&SumValueDef::new(
+                        ValueDef::CardTypesAmongGraveyards(PlayerRelation::Any),
+                        ValueDef::Constant(1),
+                    )),
+                ),
+            },
+        ),
+    ]),
+);
+
 // FUT 154 — Thornweald Archer
 pub(in crate::card::sets) static THORNWEALD_ARCHER: CardRecord = CardRecord::new(
     "Thornweald Archer",
@@ -1145,6 +1170,7 @@ pub(in crate::card::sets) static CARDS: &[&CardRecord] = &[
     &SPROUT_SWARM,
     &SUMMONER_S_PACT,
     &EDGE_OF_AUTUMN,
+    &TARMOGOYF,
     &THORNWEALD_ARCHER,
     &JHOIRA_OF_THE_GHITU,
     &AKROMAS_MEMORIAL,
