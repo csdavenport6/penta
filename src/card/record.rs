@@ -319,4 +319,42 @@ mod tests {
         CardCatalog::new(vec![definition])
             .expect("an undeclared prepare card is a valid catalog entry");
     }
+
+    #[test]
+    fn prepare_record_with_one_unwritten_part_is_unsupported_as_a_whole() {
+        static UNWRITTEN_SPELL: CardRecord = CardRecord::new_prepare(
+            "Test Mage // Unwritten Spell",
+            ART_ID,
+            "Test Artist",
+            &[
+                (
+                    "Test Mage",
+                    CardRules::new_creature(mana_cost!("{1}{U}"), &["Wizard"], 2, 2),
+                ),
+                ("Unwritten Spell", CardRules::unsupported()),
+            ],
+        );
+        static UNWRITTEN_PERMANENT: CardRecord = CardRecord::new_prepare(
+            "Unwritten Mage // Test Spell",
+            "00000000-0000-0000-0000-000000000002",
+            "Test Artist",
+            &[
+                ("Unwritten Mage", CardRules::unsupported()),
+                ("Test Spell", CardRules::new_instant(mana_cost!("{R}"))),
+            ],
+        );
+
+        let definitions = [&UNWRITTEN_SPELL, &UNWRITTEN_PERMANENT]
+            .map(|record| record.definition(crate::card::sets::magic_2014::SET));
+
+        for definition in &definitions {
+            assert_eq!(
+                definition.implementation_status(),
+                ImplementationStatus::Unsupported,
+                "{} exposes no supported subset",
+                definition.name
+            );
+        }
+        CardCatalog::new(definitions).expect("half-written prepare cards are valid entries");
+    }
 }

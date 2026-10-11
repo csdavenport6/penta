@@ -176,10 +176,13 @@ vocabularies apart:
   lowered artifact: a `Prepared<Thing>` type, a prepared program, predicate,
   query, lane, or damage plan.
 
-A new name never uses `prepared` on its own. A mechanic name says which
-permanent, spell, or copy is prepared; an engine name says which artifact was
-lowered. In prose and test names, write "prepare card" or "prepared permanent"
-for the mechanic and "prepared engine" or "engine mode" for the engine.
+When a new name needs the word *prepared*, its neighbor says which meaning
+applies: the permanent, spell, or copy that is prepared for the mechanic, or
+the artifact that was lowered for the engine. In prose and test names, write
+"preparation card", "prepare spell", or "prepared permanent" for the mechanic
+and "prepared engine" or "engine mode" for the engine. The engine guides call
+their own compile step "preparation"; read it that way there, and prefer
+"lowering" in new text.
 `CardRecord::new_prepare` is therefore an ordinary card-layout constructor like
 `new_dfc`, not one of the execution-path constructors ruled out above.
 
@@ -657,8 +660,9 @@ will be implemented later:
 4. If an identity has only a standalone blocked audit row, either replace that
    row with the reprint comment and printing record, or turn it into a
    `unsupported` audit followed by a `CardRecord::new` whose rules are
-   `CardRules::unsupported()`. Preserve a useful existing capability-gap
-   explanation. When there was no row, add the same unsupported declaration
+   `CardRules::unsupported()`. A [preparation card](#preparation-cards) uses
+   `CardRecord::new_prepare` with both parts unsupported instead, so that both
+   names exist. Preserve a useful existing capability-gap explanation. When there was no row, add the same unsupported declaration
    with `Card rules have not been implemented.` as its honest initial audit.
 5. Put a new identity in the module for its first English-language paper set
    when possible, otherwise its earliest paper set, using that exact debut
@@ -787,9 +791,10 @@ cast option per part through `CardComposition::alternate_spell`; do not write a
 combined `permanent // spell` name, which is also what a deck list uses. Unlike
 a double-faced card, the permanent's name alone is not a lookup alias.
 
-Either part may be `CardRules::unsupported()`. Declare a card with both names
-as soon as it is inventoried, even when neither part has rules: the prepare
-spell's name is only nameable (CR 722.5) once the second part exists. The card
+Either part may be `CardRules::unsupported()`. Declare a new preparation card
+with both names as soon as it is inventoried, even when neither part has rules:
+the prepare spell's name is only nameable (CR 722.5) once the second part
+exists. The card
 stays unsupported until both parts are complete, and its audit comment names
 the gap in whichever part is missing.
 
@@ -831,8 +836,9 @@ The designation and its exiled copy are the engine's job, not the card's:
   prepared permanent that loses its abilities or becomes a copy of something
   else stays prepared.
 
-`src/game/tests/prepare_cards.rs` holds these rulings as regression tests in
-both engine modes. A new preparation card needs a card-level test only for
+`src/game/tests/prepare_cards.rs` and `src/game/tests/woe_hob_preparation.rs`
+hold these rulings as regression tests; the former runs every case in both
+engine modes. A new preparation card needs a card-level test only for
 what its own clauses add.
 
 ## Class level bars

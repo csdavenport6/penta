@@ -87,7 +87,7 @@ fn mage_entering_prepared(
     uuid: &str,
     name: &'static str,
     spell_name: &'static str,
-    spell: CardRules,
+    spell: &CardRules,
 ) -> CardDefinition {
     prepare_card(
         uuid,
@@ -97,7 +97,7 @@ fn mage_entering_prepared(
                 CardRules::new_creature(mana_cost!("{1}{U}"), &["Wizard"], 2, 2)
                     .with_abilities(&ENTERS_PREPARED),
             ),
-            (spell_name, spell),
+            (spell_name, *spell),
         ],
     )
 }
@@ -176,6 +176,21 @@ fn resolve_from_hand(game: &mut Game, definition: &str, targets: &[Target]) {
     let card = hand(game, CardDefinitionId::from_uuid(definition));
     cast(game, card, targets);
     drain_pending(game);
+}
+
+/// Gives player one a library deep enough to draw from.
+fn stock_library(game: &mut Game) {
+    game.players[0].library = game
+        .build_zone(PlayerId::One, &[cards::FOREST; 10])
+        .unwrap();
+}
+
+/// Resolves the Ancestral Recall on the stack, which player one aimed at
+/// themselves.
+fn assert_resolves_drawing_three(game: &mut Game) {
+    let hand_before = game.players[0].hand.len();
+    drain_pending(game);
+    assert_eq!(game.players[0].hand.len(), hand_before + 3);
 }
 
 /// Runs one of player one's upkeeps, reporting how many abilities it put on
@@ -317,9 +332,7 @@ fn a_token_copy_with_exceptions_still_prepares_the_printed_prepare_spell() {
                 COUNTERPART,
             )],
         );
-        game.players[0].library = game
-            .build_zone(PlayerId::One, &[cards::FOREST; 10])
-            .unwrap();
+        stock_library(&mut game);
         let emeritus = game
             .put_onto_battlefield(PlayerId::One, cards::EMERITUS_OF_IDEATION)
             .unwrap();
@@ -356,14 +369,19 @@ fn a_token_copy_with_exceptions_still_prepares_the_printed_prepare_spell() {
         assert_eq!((spell.power, spell.toughness), (None, None));
 
         cast(&mut game, token_copy, &[Target::Player(PlayerId::One)]);
+        let on_stack = game
+            .stack_trigger_event_object(game.stack.last().unwrap())
+            .expect("the cast copy is a spell");
+        assert!(on_stack.types.contains(CardType::Instant));
+        assert!(!on_stack.types.contains(CardType::Creature));
+        assert_eq!(on_stack.colors, [false, true, false, false, false], "blue");
+        assert_eq!((on_stack.power, on_stack.toughness), (None, None));
         assert!(
             !is_prepared(&game, token),
             "casting it unprepares the token"
         );
         assert!(is_prepared(&game, emeritus), "and only the token");
-        let hand_before = game.players[0].hand.len();
-        drain_pending(&mut game);
-        assert_eq!(game.players[0].hand.len(), hand_before + 3);
+        assert_resolves_drawing_three(&mut game);
     }
 }
 
@@ -387,9 +405,7 @@ fn a_prepared_permanent_that_becomes_a_copy_of_something_else_stays_prepared() {
                 },
             )],
         );
-        game.players[0].library = game
-            .build_zone(PlayerId::One, &[cards::FOREST; 10])
-            .unwrap();
+        stock_library(&mut game);
         let emeritus = game
             .put_onto_battlefield(PlayerId::One, cards::EMERITUS_OF_IDEATION)
             .unwrap();
@@ -422,9 +438,7 @@ fn a_prepared_permanent_that_becomes_a_copy_of_something_else_stays_prepared() {
 
         cast(&mut game, copies[0].0, &[Target::Player(PlayerId::One)]);
         assert!(!is_prepared(&game, emeritus));
-        let hand_before = game.players[0].hand.len();
-        drain_pending(&mut game);
-        assert_eq!(game.players[0].hand.len(), hand_before + 3);
+        assert_resolves_drawing_three(&mut game);
         assert!(exiled_copies(&game, PlayerId::One).is_empty());
     }
 }
@@ -449,9 +463,7 @@ fn a_prepared_permanent_that_loses_all_abilities_stays_prepared() {
                 },
             )],
         );
-        game.players[0].library = game
-            .build_zone(PlayerId::One, &[cards::FOREST; 10])
-            .unwrap();
+        stock_library(&mut game);
         let emeritus = game
             .put_onto_battlefield(PlayerId::One, cards::EMERITUS_OF_IDEATION)
             .unwrap();
@@ -471,9 +483,7 @@ fn a_prepared_permanent_that_loses_all_abilities_stays_prepared() {
 
         cast(&mut game, copies[0].0, &[Target::Player(PlayerId::One)]);
         assert!(!is_prepared(&game, emeritus));
-        let hand_before = game.players[0].hand.len();
-        drain_pending(&mut game);
-        assert_eq!(game.players[0].hand.len(), hand_before + 3);
+        assert_resolves_drawing_three(&mut game);
     }
 }
 
@@ -500,7 +510,7 @@ fn a_prepare_spell_that_fizzles_leaves_its_permanent_unprepared() {
                 JOLT_MAGE,
                 "Jolt Mage",
                 "Test Jolt",
-                CardRules::new_instant(mana_cost!("{R}")).with_ability(
+                &CardRules::new_instant(mana_cost!("{R}")).with_ability(
                     AbilityDef::spell_with_targets(
                         "Test Jolt deals 1 damage to target creature. Draw a card.",
                         &A_CREATURE,
@@ -555,12 +565,10 @@ fn two_same_named_prepare_spell_copies_coexist_in_exile_and_belong_to_their_own_
                 RECALL_STUDENT,
                 "Recall Student",
                 "Ancestral Recall",
-                recall,
+                &recall,
             )],
         );
-        game.players[0].library = game
-            .build_zone(PlayerId::One, &[cards::FOREST; 10])
-            .unwrap();
+        stock_library(&mut game);
         let emeritus = game
             .put_onto_battlefield(PlayerId::One, cards::EMERITUS_OF_IDEATION)
             .unwrap();
@@ -599,9 +607,7 @@ fn two_same_named_prepare_spell_copies_coexist_in_exile_and_belong_to_their_own_
             cast(state, student_copy, &[Target::Player(PlayerId::One)]);
             assert!(!is_prepared(state, student));
             assert!(is_prepared(state, emeritus));
-            let hand_before = state.players[0].hand.len();
-            drain_pending(state);
-            assert_eq!(state.players[0].hand.len(), hand_before + 3);
+            assert_resolves_drawing_three(state);
             assert_eq!(
                 exiled_copies(state, PlayerId::One),
                 [(emeritus_copy, "Ancestral Recall".to_string())]

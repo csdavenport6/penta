@@ -56,7 +56,7 @@ fn alternate_spell_composition_names_both_parts_and_casts_each_for_its_own_cost(
             CardRules::new_creature(mana_cost!("{3}{U}{U}"), &["Wizard"], 5, 5),
         ),
         (
-            "Shock",
+            "Doom",
             CardRules::new_instant(mana_cost!("{R}")).with_ability(AbilityDef::destroy_target(
                 "Destroy target creature.",
                 &AbilityTargetDef::exactly_one_permanent(ObjectPredicateDef::HasType(
@@ -73,7 +73,7 @@ fn alternate_spell_composition_names_both_parts_and_casts_each_for_its_own_cost(
     assert_eq!(composition.parts[0].name, "Mage");
     assert_eq!(composition.parts[0].rules, PARTS[0].1);
     assert_eq!(composition.parts[1].id, CardPartId(1));
-    assert_eq!(composition.parts[1].name, "Shock");
+    assert_eq!(composition.parts[1].name, "Doom");
     assert_eq!(composition.parts[1].rules, PARTS[1].1);
     assert_eq!(
         composition.structure,
@@ -93,7 +93,7 @@ fn alternate_spell_composition_names_both_parts_and_casts_each_for_its_own_cost(
     assert_eq!(main.effect_status, CardEffectStatus::Implemented);
     assert!(main.targets.is_empty());
     assert_eq!(alternate.id, PlayOptionId(1));
-    assert_eq!(alternate.label, "Shock");
+    assert_eq!(alternate.label, "Doom");
     assert_eq!(alternate.form, SpellForm::Part(CardPartId(1)));
     assert_eq!(alternate.mana_cost, Some(mana_cost!("{R}")));
     assert_eq!(alternate.effect_status, CardEffectStatus::Implemented);

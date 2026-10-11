@@ -121,9 +121,9 @@ pub const fn enters_prepared() -> AbilityDef {
 /// "... becomes prepared." Does nothing to a permanent that is already
 /// prepared or has no prepare spell (CR 722.3a).
 #[must_use]
-pub const fn become_prepared(object: EffectRecipientDef) -> EffectDef {
+pub const fn become_prepared(recipient: EffectRecipientDef) -> EffectDef {
     EffectDef::SetDesignation {
-        object,
+        object: recipient,
         designation: PermanentDesignationDef::Prepared,
         present: true,
     }
@@ -132,9 +132,9 @@ pub const fn become_prepared(object: EffectRecipientDef) -> EffectDef {
 /// "... becomes unprepared." (CR 722.3b). The copy of its prepare spell in
 /// exile ceases to exist.
 #[must_use]
-pub const fn become_unprepared(object: EffectRecipientDef) -> EffectDef {
+pub const fn become_unprepared(recipient: EffectRecipientDef) -> EffectDef {
     EffectDef::SetDesignation {
-        object,
+        object: recipient,
         designation: PermanentDesignationDef::Prepared,
         present: false,
     }

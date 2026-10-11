@@ -282,10 +282,10 @@ impl CardComposition {
         .with_derived_spell_targets()
     }
 
-    /// Materializes a card printed with a secondary spell frame: a prepare
-    /// spell (CR 722), an Adventure, or an Omen. Each part is named and has
-    /// its own cast option; `kind` decides which of them a card in a given
-    /// zone may actually use.
+    /// Materializes a card printed with a secondary spell frame, such as a
+    /// preparation card and its prepare spell (CR 722). Each part is named
+    /// and has its own cast option; `kind` decides which of them a card in a
+    /// given zone may actually use.
     #[must_use]
     pub fn alternate_spell(
         parts: &[(&'static str, CardRules); 2],
