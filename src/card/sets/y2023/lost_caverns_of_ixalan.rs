@@ -4038,7 +4038,7 @@ pub(in crate::card::sets) static INTI_SENESCHAL_OF_THE_SUN: CardRecord = CardRec
                     free: false,
                     face_down: false,
                     duration: ExilePlayDurationDef::UntilYourNextEndStep,
-                    spend_any_color: false,
+                    mana_spending: None,
                     play_condition: None,
                     cast_only: false,
                 },
