@@ -10,9 +10,12 @@ use super::empower_jace::{
 use super::woe_hob_completion::{hand, setup};
 use super::*;
 
+mod artifacts;
 mod black;
 mod blue;
 mod green;
+mod lands;
+mod multicolor;
 mod red;
 mod white;
 
@@ -99,6 +102,18 @@ fn attack_with(game: &mut Game, attacker: GameObjectId) {
     drain_pending(game);
 }
 
+/// Player one's turn moves from the second main phase to the end step, with
+/// the mana left over from casting gone rather than burning anybody.
+fn end_step_begins(game: &mut Game) {
+    for player in &mut game.players {
+        player.mana_pool = ManaPool::default();
+        player.mana.clear();
+    }
+    game.step = Step::PostcombatMain;
+    game.advance_step();
+    assert_eq!(game.step, Step::End);
+}
+
 /// Puts cards with these definitions into player one's graveyard, oldest
 /// first, and returns their ids in the same order.
 fn put_in_graveyard(game: &mut Game, definitions: &[CardDefinitionId]) -> Vec<GameObjectId> {
@@ -143,6 +158,20 @@ fn tokens(game: &Game) -> Vec<&Permanent> {
             permanent.controller == PlayerId::One && permanent.card.definition.is_token()
         })
         .collect()
+}
+
+/// Player one casts a card with `definition` from hand with X chosen as `x`
+/// and mana to spare, leaving it on the stack.
+fn cast_for_x(game: &mut Game, definition: CardDefinitionId, x: u16) {
+    let card = hand(game, definition);
+    for color in ManaColor::COLORS {
+        game.add_unrestricted_mana(PlayerId::One, color, 6);
+    }
+    let action = casts(game, card)
+        .into_iter()
+        .find(|action| matches!(action, Action::CastSpell { choices, .. } if choices.x() == x))
+        .expect("the spell can be cast for that X");
+    game.apply(PlayerId::One, action).unwrap();
 }
 
 /// The target lists player one could cast `card` at, one per legal cast.

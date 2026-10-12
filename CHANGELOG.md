@@ -20,6 +20,10 @@ the bot-wire epoch.
 
 ## Unreleased
 
+- Implement 44 Reality Fracture multicolor cards, artifacts, and lands
+  (collector numbers 121 to 194) from existing effects. Protocol, checkpoint,
+  and replay versions are unchanged.
+
 - Implement 35 Reality Fracture cards in red and green (collector numbers 72
   to 120) from existing effects. `card::tokens::heartwood()` declares the
   rules-defined Heartwood token (CR 111.10x). Protocol, checkpoint, and replay

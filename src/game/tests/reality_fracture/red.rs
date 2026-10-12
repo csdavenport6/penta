@@ -1,20 +1,6 @@
 //! Reality Fracture's red cards.
 use super::*;
 
-/// Player one casts a card with `definition` from hand with X chosen as `x`
-/// and mana to spare, leaving it on the stack.
-fn cast_for_x(game: &mut Game, definition: CardDefinitionId, x: u16) {
-    let card = hand(game, definition);
-    for color in ManaColor::COLORS {
-        game.add_unrestricted_mana(PlayerId::One, color, 6);
-    }
-    let action = casts(game, card)
-        .into_iter()
-        .find(|action| matches!(action, Action::CastSpell { choices, .. } if choices.x() == x))
-        .expect("the spell can be cast for that X");
-    game.apply(PlayerId::One, action).unwrap();
-}
-
 /// "When this enchantment enters, it deals X damage to any target": the X the
 /// spell was cast for, read by a trigger that is a different object.
 #[test]
@@ -197,18 +183,6 @@ fn facing_the_opponent(game: &mut Game) -> Vec<GameObjectId> {
         .iter()
         .map(|permanent| permanent.card.id)
         .collect()
-}
-
-/// Player one's turn moves from the second main phase to the end step, with
-/// the mana left over from casting gone rather than burning anybody.
-fn end_step_begins(game: &mut Game) {
-    for player in &mut game.players {
-        player.mana_pool = ManaPool::default();
-        player.mana.clear();
-    }
-    game.step = Step::PostcombatMain;
-    game.advance_step();
-    assert_eq!(game.step, Step::End);
 }
 
 /// "For each creature target player controls, create a token that's a copy of
