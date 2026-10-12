@@ -7,6 +7,7 @@
 use super::empower_jace::{
     activate, activations, cast, casts, permanent, permanent_mut, settled, stock_library,
 };
+use super::mana_pool_doubling::commander_game;
 use super::woe_hob_completion::{hand, setup};
 use super::*;
 
@@ -160,13 +161,23 @@ fn tokens(game: &Game) -> Vec<&Permanent> {
         .collect()
 }
 
+/// Whether the permanent `id` has `keyword`.
+fn has_keyword(game: &Game, id: GameObjectId, keyword: KeywordAbility) -> bool {
+    game.permanent_has_executable_keyword(permanent(game, id), keyword)
+}
+
+/// Gives player one six mana of each color, more than any card here costs.
+fn mana_to_spare(game: &mut Game) {
+    for color in ManaColor::COLORS {
+        game.add_unrestricted_mana(PlayerId::One, color, 6);
+    }
+}
+
 /// Player one casts a card with `definition` from hand with X chosen as `x`
 /// and mana to spare, leaving it on the stack.
 fn cast_for_x(game: &mut Game, definition: CardDefinitionId, x: u16) {
     let card = hand(game, definition);
-    for color in ManaColor::COLORS {
-        game.add_unrestricted_mana(PlayerId::One, color, 6);
-    }
+    mana_to_spare(game);
     let action = casts(game, card)
         .into_iter()
         .find(|action| matches!(action, Action::CastSpell { choices, .. } if choices.x() == x))

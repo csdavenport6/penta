@@ -65,9 +65,7 @@ fn craterclaw_colossus_fixes_its_bonus_and_its_creatures_as_the_trigger_resolves
         let power = |game: &Game, id| game.power(permanent(game, id));
         assert_eq!(power(&game, bears), Some(4));
         assert_eq!(power(&game, colossus), Some(7));
-        assert!(
-            game.permanent_has_executable_keyword(permanent(&game, bears), KeywordAbility::Trample)
-        );
+        assert!(has_keyword(&game, bears, KeywordAbility::Trample));
         assert_eq!(power(&game, theirs), Some(2), "not a creature you control");
 
         // Losing an artifact afterwards takes nothing back, and a creature
@@ -76,9 +74,7 @@ fn craterclaw_colossus_fixes_its_bonus_and_its_creatures_as_the_trigger_resolves
         let late = settled(&mut game, cards::GRIZZLY_BEARS);
         assert_eq!(power(&game, bears), Some(4));
         assert_eq!(power(&game, late), Some(2));
-        assert!(
-            !game.permanent_has_executable_keyword(permanent(&game, late), KeywordAbility::Trample)
-        );
+        assert!(!has_keyword(&game, late, KeywordAbility::Trample));
     }
 }
 

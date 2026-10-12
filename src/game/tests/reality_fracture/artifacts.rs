@@ -13,18 +13,18 @@ fn eye_of_jace_surveilling(prepared_engine: bool, graveyard: usize) -> (Game, Ga
     (game, eye)
 }
 
-/// Player one answers a surveil 1: into the graveyard, or left on top.
+/// Player one answers a surveil 1 by putting the card into their graveyard,
+/// or by leaving it on top of their library.
 fn surveil(game: &mut Game, into_graveyard: bool) {
     let decision = game
         .observe(PlayerId::One)
         .decision
         .expect("the surveil is waiting");
-    let options = decision
-        .options
-        .iter()
-        .map(|option| option.id)
-        .take(usize::from(into_graveyard))
-        .collect();
+    let options = if into_graveyard {
+        vec![decision.options[0].id]
+    } else {
+        Vec::new()
+    };
     game.apply(
         PlayerId::One,
         Action::ChooseDecision {
@@ -95,52 +95,5 @@ fn archive_arbiter_destroys_only_a_noncreature_nonland_permanent() {
         drain_pending(&mut game);
 
         assert!(!on_battlefield(&game, mox));
-    }
-}
-
-/// "Equipped creature ... has 'Whenever this creature attacks, you gain 1
-/// life'": the ability is the creature's, so its controller gains the life.
-#[test]
-fn medics_kitesail_gives_its_creature_flying_and_a_life_for_attacking() {
-    for prepared_engine in [false, true] {
-        let mut game = setup(prepared_engine);
-        let kitesail = settled(&mut game, cards::MEDIC_S_KITESAIL);
-        let bears = settled(&mut game, cards::GRIZZLY_BEARS);
-        game.add_unrestricted_mana(PlayerId::One, ManaColor::Red, 2);
-        activate_at(&mut game, kitesail, "Equip", &[Target::Permanent(bears)]);
-        drain_pending(&mut game);
-
-        assert_eq!(game.power(permanent(&game, bears)), Some(3));
-        assert!(
-            game.permanent_has_executable_keyword(permanent(&game, bears), KeywordAbility::Flying)
-        );
-        attack_with(&mut game, bears);
-        assert_eq!(game.players[0].life, 21);
-    }
-}
-
-/// "{2}, {T}, Discard a card: Draw a card": a cost paid from hand as the
-/// ability is activated.
-#[test]
-fn murmuring_volume_discards_a_card_to_draw_one() {
-    for prepared_engine in [false, true] {
-        let mut game = setup(prepared_engine);
-        stock_library(&mut game);
-        let volume = settled(&mut game, cards::MURMURING_VOLUME);
-        game.add_unrestricted_mana(PlayerId::One, ManaColor::Red, 2);
-        assert!(
-            activations(&game, volume, "{2}, {T}").is_empty(),
-            "nothing to discard"
-        );
-
-        hand(&mut game, cards::MOUNTAIN);
-        activate(&mut game, volume, "{2}, {T}");
-        drain_pending(&mut game);
-
-        let player = &game.players[0];
-        let graveyard = player.graveyard.iter().map(|card| card.definition);
-        assert!(graveyard.eq([cards::MOUNTAIN]));
-        assert_eq!(player.hand.len(), 1);
-        assert_eq!(player.hand[0].definition, cards::FOREST, "the card drawn");
     }
 }

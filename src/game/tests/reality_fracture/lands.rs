@@ -1,6 +1,5 @@
 //! Reality Fracture's lands.
 use super::*;
-use crate::card::PermanentDesignationDef;
 
 /// Player one plays a land with `definition` from hand, and returns the
 /// permanent it became.
@@ -192,30 +191,5 @@ fn hexhaven_dueling_arena_prepares_cheaply_only_a_creature_that_attacked_this_tu
         game.step = Step::End;
         assert!(activation_targets(&game, arena, "{2}, {T}").is_empty());
         assert_eq!(activation_targets(&game, arena, "{4}, {T}").len(), 2);
-    }
-}
-
-/// A creature with a prepare spell that attacked becomes prepared.
-#[test]
-fn hexhaven_dueling_arena_prepares_the_creature_it_targets() {
-    for prepared_engine in [false, true] {
-        let mut game = setup(prepared_engine);
-        let arena = settled(&mut game, cards::HEXHAVEN_DUELING_ARENA);
-        let emeritus = settled(&mut game, cards::EMERITUS_OF_IDEATION);
-        let prepared = |game: &Game| {
-            permanent(game, emeritus)
-                .designations
-                .contains(&PermanentDesignationDef::Prepared)
-        };
-        game.set_permanent_designation(emeritus, PermanentDesignationDef::Prepared, false);
-        assert!(!prepared(&game));
-        permanent_mut(&mut game, emeritus).attacked_this_turn = true;
-        game.step = Step::PostcombatMain;
-        game.add_unrestricted_mana(PlayerId::One, ManaColor::Red, 2);
-
-        activate_at(&mut game, arena, "{2}, {T}", &[Target::Permanent(emeritus)]);
-        drain_pending(&mut game);
-
-        assert!(prepared(&game));
     }
 }

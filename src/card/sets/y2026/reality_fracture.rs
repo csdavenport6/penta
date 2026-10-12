@@ -4194,7 +4194,9 @@ pub(in crate::card::sets) static PRIMAL_WITCHSTALKER: CardRecord = CardRecord::n
                     },
                 },
                 // A library of fewer than four cards has as many milled as it holds, which is
-                // not milling four (CR 701.17b), so "when you do" asks for all four.
+                // not milling four (CR 701.17b), so "when you do" asks for all four: The Royal
+                // Scions is ruled the same way for drawing fewer than four. Surveil is the
+                // exception only because CR 701.25d makes it one.
                 EffectDef::IfCondition {
                     condition: &TriggerConditionDef::ObjectSetCount(&ObjectSetCountConditionDef {
                         objects: &ObjectSetDef::Binding(Binding!("milled")),
@@ -4574,7 +4576,10 @@ pub(in crate::card::sets) static TWINNED_VISION: CardRecord = CardRecord::new(
                 CostDef::DiscardCards(1),
             ],
             AlternativeCastKindDef::Flashback,
-            Some("Flashback—{1}{U/R}{U/R}, Discard a card."),
+            Some(
+                "Flashback—{1}{U/R}{U/R}, Discard a card. (You may cast this card from your \
+                 graveyard for its flashback cost. Then exile it.)",
+            ),
             EffectDef::None,
         ),
     ]),

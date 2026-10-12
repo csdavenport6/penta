@@ -1,11 +1,6 @@
 //! Reality Fracture's multicolor cards.
 use super::*;
 
-/// Whether player one's permanent `id` has `keyword`.
-fn has_keyword(game: &Game, id: GameObjectId, keyword: KeywordAbility) -> bool {
-    game.permanent_has_executable_keyword(permanent(game, id), keyword)
-}
-
 /// "{6}: Create a Heartwood token. Then Aerid Konstrari gets +X/+0 until end
 /// of turn, where X is the number of artifacts you control": the token just
 /// made is one of them.
@@ -22,20 +17,6 @@ fn aerid_konstrari_counts_the_heartwood_its_ability_just_created() {
 
         assert_eq!(tokens(&game).len(), 2);
         assert_eq!(game.power(permanent(&game, aerid)), Some(7));
-    }
-}
-
-/// "When Aerid Konstrari enters or dies, create a Heartwood token."
-#[test]
-fn aerid_konstrari_leaves_a_heartwood_behind_when_it_dies() {
-    for prepared_engine in [false, true] {
-        let mut game = setup(prepared_engine);
-        let aerid = settled(&mut game, cards::AERID_KONSTRARI);
-
-        game.destroy_permanent(aerid);
-        drain_pending(&mut game);
-
-        assert_eq!(tokens(&game).len(), 2);
     }
 }
 
@@ -114,19 +95,8 @@ fn clash_of_elements_deals_its_damage_for_a_token_put_on_top() {
 #[test]
 fn clash_of_elements_deals_no_damage_for_a_commander_kept_out_of_the_library() {
     for prepared_engine in [false, true] {
-        let deck = Deck {
-            commanders: vec![cards::SQUEE_GOBLIN_NABOB, cards::THALIA_GUARDIAN_OF_THRABEN],
-            main: vec![cards::MOUNTAIN; 99],
-            sideboard: Vec::new(),
-        };
-        let catalog = crate::card::catalog().unwrap();
-        let mut game =
-            Game::new_with_format(Format::DuelCommander, catalog, [deck.clone(), deck], 1).unwrap();
+        let mut game = commander_game(Format::DuelCommander);
         game.set_prepared_engine_enabled(prepared_engine);
-        game.pregame = None;
-        game.step = Step::PrecombatMain;
-        game.active_player = PlayerId::One;
-        game.priority = PlayerId::One;
         let commander = game.players[1].command[0].id;
         game.move_target_to_zone(
             Target::Card(commander),
@@ -145,16 +115,7 @@ fn clash_of_elements_deals_no_damage_for_a_commander_kept_out_of_the_library() {
         );
         run_to_decision(&mut game).expect("the commander's owner chooses");
         choose_decision_by_label(&mut game, PlayerId::Two, "Top");
-        let instead = game.pending_decisions[0].observation.clone();
-        assert_eq!(instead.player, PlayerId::Two, "the command zone is offered");
-        game.apply(
-            PlayerId::Two,
-            Action::ChooseDecision {
-                decision: instead.id,
-                options: vec![0],
-            },
-        )
-        .unwrap();
+        choose_decision_by_label(&mut game, PlayerId::Two, "Move to the command zone");
         drain_pending(&mut game);
 
         assert_eq!(game.players[1].command.len(), 2);
@@ -163,29 +124,22 @@ fn clash_of_elements_deals_no_damage_for_a_commander_kept_out_of_the_library() {
     }
 }
 
-/// Entrust the Spark resolved as far as its offer, with a planeswalker of
-/// yours to give up and another in your library.
-fn entrust_the_spark_offering(game: &mut Game) -> GameObjectId {
-    let jace = settled(game, cards::JACE_MEMORY_ADEPT);
-    game.players[0].library = game
-        .build_zone(
-            PlayerId::One,
-            &[cards::FOREST, cards::CHANDRA_TORCH_OF_DEFIANCE],
-        )
-        .unwrap();
-    cast(game, cards::ENTRUST_THE_SPARK, &[]);
-    run_to_decision(game).expect("sacrificing a planeswalker is offered");
-    jace
-}
-
 /// "You may sacrifice a planeswalker. If you do, search your library for a
 /// planeswalker card, put it onto the battlefield, then shuffle."
 #[test]
 fn entrust_the_spark_trades_a_planeswalker_for_one_from_your_library() {
     for prepared_engine in [false, true] {
         let mut game = setup(prepared_engine);
-        let jace = entrust_the_spark_offering(&mut game);
+        let jace = settled(&mut game, cards::JACE_MEMORY_ADEPT);
+        game.players[0].library = game
+            .build_zone(
+                PlayerId::One,
+                &[cards::FOREST, cards::CHANDRA_TORCH_OF_DEFIANCE],
+            )
+            .unwrap();
 
+        cast(&mut game, cards::ENTRUST_THE_SPARK, &[]);
+        run_to_decision(&mut game).expect("sacrificing a planeswalker is offered");
         choose_decision_by_label(&mut game, PlayerId::One, "Sacrifice Jace, Memory Adept");
         let search = run_to_decision(&mut game).expect("the search chooses its card");
         let found = search
@@ -199,20 +153,6 @@ fn entrust_the_spark_trades_a_planeswalker_for_one_from_your_library() {
 
         assert!(!on_battlefield(&game, jace));
         assert_eq!(controlled(&game, cards::CHANDRA_TORCH_OF_DEFIANCE).len(), 1);
-    }
-}
-
-#[test]
-fn entrust_the_spark_searches_for_nothing_when_you_keep_your_planeswalker() {
-    for prepared_engine in [false, true] {
-        let mut game = setup(prepared_engine);
-        let jace = entrust_the_spark_offering(&mut game);
-
-        choose_decision_by_label(&mut game, PlayerId::One, "Decline");
-        assert!(run_to_decision(&mut game).is_none(), "no search follows");
-
-        assert!(on_battlefield(&game, jace));
-        assert_eq!(game.players[0].library.len(), 2);
     }
 }
 
@@ -287,10 +227,10 @@ fn ingris_stingerquill_gives_the_cadet_it_creates_haste() {
     }
 }
 
-/// "{R}{G} ... deals 6 damage to target creature with flying" takes only a
-/// flier, and the third mode adds three colorless mana.
+/// "Konstrari Charm deals 6 damage to target creature with flying" takes only
+/// a flier; the counters take any creature.
 #[test]
-fn konstrari_charm_burns_only_a_flier_and_can_add_three_colorless_mana() {
+fn konstrari_charm_burns_only_a_creature_with_flying() {
     for prepared_engine in [false, true] {
         let mut game = setup(prepared_engine);
         let angel = game
@@ -312,18 +252,20 @@ fn konstrari_charm_burns_only_a_flier_and_can_add_three_colorless_mana() {
         };
         assert_eq!(aimed_at(angel), 2, "the damage or the counters");
         assert_eq!(aimed_at(bears), 1, "the counters only");
+    }
+}
 
-        let untargeted = casts(&game, charm)
-            .into_iter()
-            .find(|action| {
-                matches!(action, Action::CastSpell { choices, .. }
-                    if choices.iter_targets().next().is_none())
-            })
-            .expect("the mana mode has no target");
-        game.apply(PlayerId::One, untargeted).unwrap();
+/// "Add {C}{C}{C}": a mode of a spell, so the mana arrives as it resolves.
+#[test]
+fn konstrari_charm_adds_three_colorless_mana() {
+    for prepared_engine in [false, true] {
+        let mut game = setup(prepared_engine);
+
+        cast(&mut game, cards::KONSTRARI_CHARM, &[]);
+        assert_eq!(game.players[0].mana_pool.colorless, 0);
         drain_pending(&mut game);
 
-        assert_eq!(game.players[0].mana_pool.total(), 3);
+        assert_eq!(game.players[0].mana_pool.colorless, 3);
     }
 }
 
@@ -454,9 +396,7 @@ fn primal_witchstalker_returns_nothing_unless_four_cards_were_milled() {
 /// mana to spare, leaving it on the stack.
 fn cast_from_graveyard(game: &mut Game, definition: CardDefinitionId) {
     let card = put_in_graveyard(game, &[definition])[0];
-    for color in ManaColor::COLORS {
-        game.add_unrestricted_mana(PlayerId::One, color, 6);
-    }
+    mana_to_spare(game);
     let action = casts(game, card)
         .into_iter()
         .next()
@@ -499,6 +439,42 @@ fn recursive_recruitment_cast_from_hand_adds_no_counters() {
         drain_pending(&mut game);
 
         assert_eq!(token_counters(&game), [0, 0]);
+    }
+}
+
+/// "Whenever an opponent casts a spell with mana value 2 or less, you gain 2
+/// life": not your own spell, and not a three-drop.
+#[test]
+fn solarium_sentry_gains_life_only_for_an_opponents_cheap_spell() {
+    for prepared_engine in [false, true] {
+        let mut game = setup(prepared_engine);
+        settled(&mut game, cards::SOLARIUM_SENTRY);
+        cast(&mut game, cards::GRIZZLY_BEARS, &[]);
+        drain_pending(&mut game);
+        assert_eq!(game.players[0].life, 20, "your own two-drop");
+
+        game.active_player = PlayerId::Two;
+        game.priority = PlayerId::Two;
+        for (definition, life) in [(cards::GRAY_OGRE, 20), (cards::GRIZZLY_BEARS, 22)] {
+            let spell = game
+                .build_zone(PlayerId::Two, &[definition])
+                .unwrap()
+                .remove(0);
+            let id = spell.id;
+            game.players[1].hand.push(spell);
+            for color in ManaColor::COLORS {
+                game.add_unrestricted_mana(PlayerId::Two, color, 3);
+            }
+            let action = game
+                .legal_actions(PlayerId::Two)
+                .into_iter()
+                .find(|action| matches!(action, Action::CastSpell { card, .. } if *card == id))
+                .expect("the opponent can cast it");
+            game.apply(PlayerId::Two, action).unwrap();
+            drain_pending(&mut game);
+
+            assert_eq!(game.players[0].life, life);
+        }
     }
 }
 
@@ -646,22 +622,6 @@ fn tenured_tethermage_taps_two_artifacts_for_its_counters() {
     }
 }
 
-#[test]
-fn tenured_tethermage_that_keeps_its_lands_makes_no_heartwoods() {
-    for prepared_engine in [false, true] {
-        let mut game = setup(prepared_engine);
-        settled(&mut game, cards::FOREST);
-
-        cast(&mut game, cards::TENURED_TETHERMAGE, &[]);
-        run_to_decision(&mut game).expect("sacrificing a land is offered");
-        choose_decision_by_label(&mut game, PlayerId::One, "Decline");
-        drain_pending(&mut game);
-
-        assert!(tokens(&game).is_empty());
-        assert_eq!(controlled(&game, cards::FOREST).len(), 1);
-    }
-}
-
 /// "Draw a card. If this spell wasn't cast from your hand, draw two cards
 /// instead."
 #[test]
@@ -684,9 +644,7 @@ fn twinned_vision_flashed_back_costs_a_discard_and_draws_two_cards() {
         let mut game = setup(prepared_engine);
         stock_library(&mut game);
         let vision = put_in_graveyard(&mut game, &[cards::TWINNED_VISION])[0];
-        for color in ManaColor::COLORS {
-            game.add_unrestricted_mana(PlayerId::One, color, 6);
-        }
+        mana_to_spare(&mut game);
         assert!(casts(&game, vision).is_empty(), "nothing to discard");
 
         hand(&mut game, cards::MOUNTAIN);

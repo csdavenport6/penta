@@ -119,10 +119,7 @@ fn infinite_coursework_taps_and_unprepares_the_creature_it_enchants() {
         assert!(!prepared(&game));
         assert!(game.players[0].exile.is_empty(), "the copy ceased to exist");
         assert!(
-            !game.permanent_has_executable_keyword(
-                permanent(&game, emeritus),
-                KeywordAbility::Flying
-            ),
+            !has_keyword(&game, emeritus, KeywordAbility::Flying),
             "it loses all abilities"
         );
     }
