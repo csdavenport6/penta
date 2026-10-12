@@ -121,6 +121,7 @@ const CADET_TOKEN: TokenCharacteristics =
             "Elizabeth Peiró",
         ));
 
+// One list for the same reason: two Ways create this token.
 static BEAST_TOKEN_ABILITIES: [AbilityDef; 1] = [abilities::trample()];
 const BEAST_TOKEN: TokenCharacteristics =
     TokenCharacteristics::creature(&["Beast"], &[ManaColor::Green], 4, 4)

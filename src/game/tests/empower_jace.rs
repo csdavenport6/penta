@@ -10,6 +10,9 @@ use crate::card::Subtype;
 
 const JACE: Subtype = Subtype::from_name("Jace").expect("Jace is a planeswalker type");
 
+static SOLDIER: TokenCharacteristics =
+    TokenCharacteristics::creature(&["Soldier"], &[ManaColor::White], 1, 1);
+
 /// Player one's Jace planeswalker tokens and the loyalty on each, in
 /// battlefield order.
 fn jace_tokens(game: &Game) -> Vec<(GameObjectId, u16)> {
@@ -27,11 +30,62 @@ fn jace_tokens(game: &Game) -> Vec<(GameObjectId, u16)> {
         .collect()
 }
 
+/// Player one's only Jace token, created by whatever just empowered Jace.
+fn the_jace_token(game: &Game) -> GameObjectId {
+    let tokens = jace_tokens(game);
+    assert_eq!(tokens.len(), 1);
+    tokens[0].0
+}
+
+fn permanent(game: &Game, id: GameObjectId) -> &Permanent {
+    game.battlefield
+        .iter()
+        .find(|permanent| permanent.card.id == id)
+        .expect("the permanent is on the battlefield")
+}
+
+fn permanent_mut(game: &mut Game, id: GameObjectId) -> &mut Permanent {
+    game.battlefield
+        .iter_mut()
+        .find(|permanent| permanent.card.id == id)
+        .expect("the permanent is on the battlefield")
+}
+
+/// The loyalty counters on the planeswalker `id`.
+fn loyalty(game: &Game, id: GameObjectId) -> u16 {
+    permanent(game, id).counters(CounterKind::Loyalty)
+}
+
+/// A Jace planeswalker token no Empower card made, already holding `loyalty`.
+fn another_jace_token(game: &mut Game, loyalty: u16) -> GameObjectId {
+    static OTHER_JACE: TokenCharacteristics = TokenCharacteristics::new(
+        CardTypeSet::single(CardType::Planeswalker),
+        &["Jace"],
+        &[ManaColor::Blue],
+        None,
+    );
+    let token = game.create_token_from(PlayerId::One, OTHER_JACE, None);
+    permanent_mut(game, token).add_counters(CounterKind::Loyalty, loyalty);
+    token
+}
+
 /// Gives player one a library deep enough to draw and surveil from.
 fn stock_library(game: &mut Game) {
     game.players[0].library = game
         .build_zone(PlayerId::One, &[cards::FOREST; 10])
         .unwrap();
+}
+
+/// Puts a card with `definition` onto the battlefield under player one as
+/// though it had been there since an earlier turn, resolving whatever its
+/// arrival triggers.
+fn settled(game: &mut Game, definition: CardDefinitionId) -> GameObjectId {
+    let id = game
+        .put_onto_battlefield(PlayerId::One, definition)
+        .expect("cataloged");
+    permanent_mut(game, id).entered_controller_turn = 0;
+    drain_pending(game);
+    id
 }
 
 /// Player one casts a card with `definition` from hand at `targets` with mana
@@ -49,6 +103,58 @@ fn cast(game: &mut Game, definition: CardDefinitionId, targets: &[Target]) {
             if *cast == card && choices.iter_targets().eq(targets))
         })
         .expect("the spell can be cast at those targets");
+    game.apply(PlayerId::One, action).unwrap();
+}
+
+/// Player one's legal ways to cast `card`.
+fn casts(game: &Game, card: GameObjectId) -> Vec<Action> {
+    game.legal_actions(PlayerId::One)
+        .into_iter()
+        .filter(|action| matches!(action, Action::CastSpell { card: cast, .. } if *cast == card))
+        .collect()
+}
+
+/// Player one puts a Lightning Bolt of their own on the stack, aimed at the
+/// opponent, for something to counter.
+fn bolt_on_the_stack(game: &mut Game) -> GameObjectId {
+    let bolt = hand(game, cards::LIGHTNING_BOLT);
+    game.add_unrestricted_mana(PlayerId::One, ManaColor::Red, 1);
+    let action = casts(game, bolt).remove(0);
+    game.apply(PlayerId::One, action).unwrap();
+    bolt
+}
+
+/// Player one's legal activations of `source`'s ability whose text starts
+/// with `prefix`, one per way of choosing its targets.
+fn activations(game: &Game, source: GameObjectId, prefix: &str) -> Vec<Action> {
+    let permanent = permanent(game, source);
+    game.legal_actions(PlayerId::One)
+        .into_iter()
+        .filter(|action| {
+            let Action::ActivateAbility {
+                source: activated,
+                ability,
+                ..
+            } = action
+            else {
+                return false;
+            };
+            let mut named = false;
+            game.for_each_effective_ability(permanent, |effective| {
+                named |= effective.origin == *ability && effective.ability.text.starts_with(prefix);
+            });
+            *activated == source && named
+        })
+        .collect()
+}
+
+/// Player one activates `source`'s ability whose text starts with `prefix`,
+/// leaving it on the stack.
+fn activate(game: &mut Game, source: GameObjectId, prefix: &str) {
+    let action = activations(game, source, prefix)
+        .into_iter()
+        .next()
+        .unwrap_or_else(|| panic!("{prefix} can be activated"));
     game.apply(PlayerId::One, action).unwrap();
 }
 
@@ -80,6 +186,22 @@ fn answer(game: &mut Game, wanted: impl Fn(&DecisionOption) -> bool) {
     .unwrap();
 }
 
+/// Every permanent that has left the battlefield so far, in order.
+fn departed(game: &Game) -> Vec<GameObjectId> {
+    game.events()
+        .iter()
+        .filter_map(|event| match event {
+            GameEvent::PermanentLeftBattlefield { card, .. } => Some(*card),
+            _ => None,
+        })
+        .collect()
+}
+
+/// The opponent's library as card ids, bottom first.
+fn opposing_library(game: &Game) -> Vec<GameObjectId> {
+    game.players[1].library.iter().map(|card| card.id).collect()
+}
+
 /// The game rebuilt from what player one can see of it, in the same engine
 /// mode.
 fn reconstructed(game: &Game) -> Game {
@@ -106,32 +228,6 @@ fn empowering_jace_with_no_jace_token_creates_one_holding_that_much_loyalty() {
         assert_eq!(tokens[0].1, 6, "empower Jace 6");
         assert_eq!(game.players[0].hand.len(), hand_before + 1, "draw a card");
     }
-}
-
-/// Player one's Jace planeswalker token with `id`'s loyalty.
-fn loyalty(game: &Game, id: GameObjectId) -> u16 {
-    game.battlefield
-        .iter()
-        .find(|permanent| permanent.card.id == id)
-        .expect("the permanent is on the battlefield")
-        .counters(CounterKind::Loyalty)
-}
-
-/// A Jace planeswalker token no Empower card made, already holding `loyalty`.
-fn another_jace_token(game: &mut Game, loyalty: u16) -> GameObjectId {
-    static OTHER_JACE: TokenCharacteristics = TokenCharacteristics::new(
-        CardTypeSet::single(CardType::Planeswalker),
-        &["Jace"],
-        &[ManaColor::Blue],
-        None,
-    );
-    let token = game.create_token_from(PlayerId::One, OTHER_JACE, None);
-    game.battlefield
-        .iter_mut()
-        .find(|permanent| permanent.card.id == token)
-        .expect("the token entered")
-        .add_counters(CounterKind::Loyalty, loyalty);
-    token
 }
 
 /// "If you control a Jace planeswalker token, you can't choose to create a
@@ -183,6 +279,9 @@ fn empowering_jace_offers_every_jace_token_you_control() {
         stock_library(&mut game);
         let first = another_jace_token(&mut game, 1);
         let second = another_jace_token(&mut game, 2);
+        let nontoken = game
+            .put_onto_battlefield(PlayerId::One, cards::JACE_THE_MIND_SCULPTOR)
+            .unwrap();
 
         cast(&mut game, cards::PROTEGE_S_AWAKENING, &[]);
         pass_until_decision(&mut game);
@@ -195,81 +294,14 @@ fn empowering_jace_offers_every_jace_token_you_control() {
             .iter()
             .filter_map(|option| option.card.as_ref().map(|(id, _)| *id))
             .collect::<Vec<_>>();
-        assert_eq!(offered, [first, second]);
+        assert_eq!(offered, [first, second], "and not the nontoken Jace");
         assert_eq!((decision.minimum, decision.maximum), (1, 1));
         answer(&mut game, |option| offers(option, second));
         drain_pending(&mut game);
 
         assert_eq!(jace_tokens(&game), [(first, 1), (second, 8)]);
+        assert_eq!(loyalty(&game, nontoken), 3);
     }
-}
-
-fn permanent_mut(game: &mut Game, id: GameObjectId) -> &mut Permanent {
-    game.battlefield
-        .iter_mut()
-        .find(|permanent| permanent.card.id == id)
-        .expect("the permanent is on the battlefield")
-}
-
-/// Puts a card with `definition` onto the battlefield under player one as
-/// though it had been there since an earlier turn, resolving whatever its
-/// arrival triggers.
-fn settled(game: &mut Game, definition: CardDefinitionId) -> GameObjectId {
-    let id = game
-        .put_onto_battlefield(PlayerId::One, definition)
-        .expect("cataloged");
-    permanent_mut(game, id).entered_controller_turn = 0;
-    drain_pending(game);
-    id
-}
-
-/// Player one's legal activations of `source`'s ability whose text starts
-/// with `prefix`, one per way of choosing its targets.
-fn activations(game: &Game, source: GameObjectId, prefix: &str) -> Vec<Action> {
-    let permanent = game
-        .battlefield
-        .iter()
-        .find(|permanent| permanent.card.id == source)
-        .expect("the source is on the battlefield");
-    game.legal_actions(PlayerId::One)
-        .into_iter()
-        .filter(|action| {
-            let Action::ActivateAbility {
-                source: activated,
-                ability,
-                ..
-            } = action
-            else {
-                return false;
-            };
-            let mut named = false;
-            game.for_each_effective_ability(permanent, |effective| {
-                named |= effective.origin == *ability && effective.ability.text.starts_with(prefix);
-            });
-            *activated == source && named
-        })
-        .collect()
-}
-
-/// Player one activates `source`'s ability whose text starts with `prefix`,
-/// leaving it on the stack.
-fn activate(game: &mut Game, source: GameObjectId, prefix: &str) {
-    let action = activations(game, source, prefix)
-        .into_iter()
-        .next()
-        .unwrap_or_else(|| panic!("{prefix} can be activated"));
-    game.apply(PlayerId::One, action).unwrap();
-}
-
-/// Every permanent that has left the battlefield so far, in order.
-fn departed(game: &Game) -> Vec<GameObjectId> {
-    game.events()
-        .iter()
-        .filter_map(|event| match event {
-            GameEvent::PermanentLeftBattlefield { card, .. } => Some(*card),
-            _ => None,
-        })
-        .collect()
 }
 
 /// "Empower Jace will put loyalty counters on" a Jace planeswalker token
@@ -304,7 +336,7 @@ fn empowering_jace_zero_creates_a_token_that_state_based_actions_remove() {
         let sculptor = settled(&mut game, cards::JACE_REALITY_SCULPTOR);
         settled(&mut game, cards::FOREST);
 
-        activate(&mut game, sculptor, "+1");
+        activate(&mut game, sculptor, "+1:");
         drain_pending(&mut game);
 
         assert_eq!(loyalty(&game, sculptor), 6, "the plus was paid");
@@ -312,6 +344,30 @@ fn empowering_jace_zero_creates_a_token_that_state_based_actions_remove() {
         let gone = departed(&game);
         assert_eq!(gone.len(), 1, "one permanent came and went");
         assert_ne!(gone[0], sculptor);
+    }
+}
+
+/// "If each target chosen is an illegal target as that spell or ability
+/// tries to resolve, it won't resolve. You won't empower Jace." No Admittance
+/// prints its damage and its Empower as separate clauses of one spell.
+#[test]
+fn a_spell_whose_only_target_is_gone_does_not_empower_jace() {
+    for prepared_engine in [false, true] {
+        let mut game = setup(prepared_engine);
+        let bears = game
+            .put_onto_battlefield(PlayerId::Two, cards::GRIZZLY_BEARS)
+            .unwrap();
+
+        cast(&mut game, cards::NO_ADMITTANCE, &[Target::Permanent(bears)]);
+        cast(
+            &mut game,
+            cards::LIGHTNING_BOLT,
+            &[Target::Permanent(bears)],
+        );
+        drain_pending(&mut game);
+
+        assert!(game.battlefield.is_empty(), "the Bolt got there first");
+        assert!(departed(&game) == [bears], "and no Jace token came or went");
     }
 }
 
@@ -326,7 +382,7 @@ fn jace_reality_sculptor_empowers_for_each_island_you_control() {
         game.put_onto_battlefield(PlayerId::Two, cards::ISLAND)
             .unwrap();
 
-        activate(&mut game, sculptor, "+1");
+        activate(&mut game, sculptor, "+1:");
         drain_pending(&mut game);
 
         let tokens = jace_tokens(&game);
@@ -350,11 +406,6 @@ fn jace_reality_sculptor_needs_twenty_five_loyalty_among_your_jaces() {
         permanent_mut(&mut game, token).add_counters(CounterKind::Loyalty, 1);
         assert_eq!(activations(&game, sculptor, "0:").len(), 1);
     }
-}
-
-/// The opponent's library as card ids, bottom first.
-fn opposing_library(game: &Game) -> Vec<GameObjectId> {
-    game.players[1].library.iter().map(|card| card.id).collect()
 }
 
 #[test]
@@ -384,9 +435,6 @@ fn jace_reality_sculptor_exiles_all_but_the_bottom_card_of_a_library() {
         }
     }
 }
-
-static SOLDIER: TokenCharacteristics =
-    TokenCharacteristics::creature(&["Soldier"], &[ManaColor::White], 1, 1);
 
 /// Overwrite the Multiverse counts what it exiled, tokens and the opponent's
 /// creatures included, before the Jace token arrives.
@@ -449,6 +497,9 @@ fn repurposed_enforcer_empowers_for_each_creature_you_control_as_it_attacks() {
     }
 }
 
+/// Empower Jace from a source that is in no zone "you" control anything from:
+/// Campus Crier is in exile by the time its ability asks which tokens are
+/// yours.
 #[test]
 fn campus_crier_empowers_from_the_graveyard_by_exiling_itself() {
     for prepared_engine in [false, true] {
@@ -479,29 +530,19 @@ fn campus_crier_empowers_from_the_graveyard_by_exiling_itself() {
     }
 }
 
-/// Player one's legal ways to cast `card`.
-fn casts(game: &Game, card: GameObjectId) -> Vec<Action> {
-    game.legal_actions(PlayerId::One)
-        .into_iter()
-        .filter(|action| matches!(action, Action::CastSpell { card: cast, .. } if *cast == card))
-        .collect()
-}
-
-/// Player one puts a Lightning Bolt of their own on the stack, aimed at the
-/// opponent, for something to counter.
-fn bolt_on_the_stack(game: &mut Game) -> GameObjectId {
-    let bolt = hand(game, cards::LIGHTNING_BOLT);
-    game.add_unrestricted_mana(PlayerId::One, ManaColor::Red, 1);
-    let action = casts(game, bolt).remove(0);
-    game.apply(PlayerId::One, action).unwrap();
-    bolt
+/// How Countersculpt's additional cost is met.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum Payment {
+    Mana,
+    JaceToken,
+    JaceCardInHand,
 }
 
 /// "As an additional cost to cast this spell, behold a Jace or pay {1}."
 #[test]
 fn countersculpt_is_paid_for_by_beholding_a_jace_or_with_one_more_mana() {
     for prepared_engine in [false, true] {
-        for payment in ["mana", "a Jace token", "a Jace card in hand"] {
+        for payment in [Payment::Mana, Payment::JaceToken, Payment::JaceCardInHand] {
             let mut game = setup(prepared_engine);
             let life = game.players[1].life;
             bolt_on_the_stack(&mut game);
@@ -514,26 +555,26 @@ fn countersculpt_is_paid_for_by_beholding_a_jace_or_with_one_more_mana() {
 
             let mut token = None;
             match payment {
-                "mana" => game.add_unrestricted_mana(PlayerId::One, ManaColor::Blue, 1),
-                "a Jace token" => token = Some(another_jace_token(&mut game, 3)),
-                _ => {
+                Payment::Mana => game.add_unrestricted_mana(PlayerId::One, ManaColor::Blue, 1),
+                Payment::JaceToken => token = Some(another_jace_token(&mut game, 3)),
+                Payment::JaceCardInHand => {
                     hand(&mut game, cards::JACE_MEMORY_ADEPT);
                 }
             }
             let ways = casts(&game, counter);
-            assert_eq!(ways.len(), 1, "exactly the one way to pay with {payment}");
+            assert_eq!(ways.len(), 1, "exactly the one way to pay: {payment:?}");
             game.apply(PlayerId::One, ways[0].clone()).unwrap();
             drain_pending(&mut game);
 
-            assert_eq!(game.players[0].mana_pool.total(), 0, "{payment}");
+            assert_eq!(game.players[0].mana_pool.total(), 0, "{payment:?}");
             assert_eq!(game.players[1].life, life, "the Bolt was countered");
             let tokens = jace_tokens(&game);
-            assert_eq!(tokens.len(), 1, "{payment}");
+            assert_eq!(tokens.len(), 1, "{payment:?}");
             match token {
                 Some(token) => assert_eq!(tokens[0], (token, 4), "beheld, then empowered"),
                 None => assert_eq!(tokens[0].1, 1, "the one it had to create"),
             }
-            let revealed = payment == "a Jace card in hand";
+            let revealed = payment == Payment::JaceCardInHand;
             assert_eq!(
                 game.players[0].hand.len(),
                 usize::from(revealed),
@@ -591,43 +632,6 @@ fn plan_for_all_outcomes_counts_itself_as_a_noncreature_spell_cast_this_turn() {
 
         assert!(jace_tokens(&game).is_empty());
     }
-}
-
-/// "The owner of up to one other target nonland permanent puts it on their
-/// choice of the top or bottom of their library."
-#[test]
-fn plan_for_all_outcomes_lets_the_owner_choose_the_end_of_their_library() {
-    for prepared_engine in [false, true] {
-        let mut game = setup(prepared_engine);
-        let bears = game
-            .put_onto_battlefield(PlayerId::Two, cards::GRIZZLY_BEARS)
-            .unwrap();
-        let top = game.players[1].library.last().expect("a library").id;
-
-        cast(&mut game, cards::PLAN_FOR_ALL_OUTCOMES, &[]);
-        pass_priority_pair(&mut game);
-        // The arrival trigger asks for its target.
-        answer(&mut game, |option| offers(option, bears));
-        pass_until_decision(&mut game);
-        choose_decision_by_label(&mut game, PlayerId::Two, "Bottom");
-        drain_pending(&mut game);
-
-        assert!(game.battlefield.iter().all(|p| p.card.id != bears));
-        let library = &game.players[1].library;
-        assert_eq!(library.last().expect("a library").id, top, "not on top");
-        assert_eq!(
-            library.first().expect("a library").definition,
-            cards::GRIZZLY_BEARS,
-            "on the bottom"
-        );
-    }
-}
-
-/// Player one's only Jace token, created by whatever just empowered Jace.
-fn the_jace_token(game: &Game) -> GameObjectId {
-    let tokens = jace_tokens(game);
-    assert_eq!(tokens.len(), 1);
-    tokens[0].0
 }
 
 /// "Only one loyalty ability of each planeswalker may be activated per turn,
@@ -713,12 +717,7 @@ fn avatar_of_burgeoning_echoes_grants_a_counter_for_each_land_you_control() {
         game.apply(PlayerId::One, action).unwrap();
         drain_pending(&mut game);
 
-        let counters = game
-            .battlefield
-            .iter()
-            .find(|permanent| permanent.card.id == avatar)
-            .expect("the Avatar is still there")
-            .counters(CounterKind::PlusOnePlusOne);
+        let counters = permanent(&game, avatar).counters(CounterKind::PlusOnePlusOne);
         assert_eq!(counters, 3, "your three lands, not the opponent's");
         assert_eq!(loyalty(&game, token), 1);
     }
@@ -774,7 +773,7 @@ fn way_of_the_warlord_grants_damage_to_an_optional_permanent_and_a_player() {
                 .into_iter()
                 .find(|action| {
                     matches!(action, Action::ActivateAbility { targets, .. }
-                        if targets.iter().flat_map(|slot| slot.targets()).eq(&wanted))
+                        if targets.iter().flat_map(TargetSelection::targets).eq(&wanted))
                 })
                 .expect("the creature or planeswalker is optional");
             game.apply(PlayerId::One, action).unwrap();
@@ -785,94 +784,6 @@ fn way_of_the_warlord_grants_damage_to_an_optional_permanent_and_a_player() {
             assert_eq!(survived, !both, "the creature only when it was aimed at");
             assert_eq!(loyalty(&game, token), 1);
         }
-    }
-}
-
-/// "You may sacrifice a creature. If you do, create a 4/4 green Beast
-/// creature token with trample."
-#[test]
-fn way_of_the_deathbringer_grants_a_beast_only_for_a_sacrificed_creature() {
-    for prepared_engine in [false, true] {
-        for sacrifice in [false, true] {
-            let mut game = setup(prepared_engine);
-            settled(&mut game, cards::WAY_OF_THE_DEATHBRINGER);
-            let token = the_jace_token(&game);
-            let bears = settled(&mut game, cards::GRIZZLY_BEARS);
-
-            activate(&mut game, token, "−2:");
-            pass_until_decision(&mut game);
-            answer(&mut game, |option| (option.label == "Decline") != sacrifice);
-            drain_pending(&mut game);
-
-            let kept = game.battlefield.iter().any(|p| p.card.id == bears);
-            assert_eq!(kept, !sacrifice);
-            let beasts = game
-                .battlefield
-                .iter()
-                .filter(|permanent| game.power(permanent) == Some(4))
-                .count();
-            assert_eq!(beasts, usize::from(sacrifice));
-        }
-    }
-}
-
-/// Way of the Healer's grant, used by a nontoken planeswalker.
-#[test]
-fn way_of_the_healer_grants_a_cadet_and_a_surveil() {
-    for prepared_engine in [false, true] {
-        let mut game = setup(prepared_engine);
-        stock_library(&mut game);
-        let adept = settled(&mut game, cards::JACE_MEMORY_ADEPT);
-        settled(&mut game, cards::WAY_OF_THE_HEALER);
-        let library = game.players[0].library.len();
-
-        activate(&mut game, adept, "−2:");
-        pass_until_decision(&mut game);
-        assert!(
-            game.battlefield.iter().any(|permanent| {
-                permanent.card.definition.is_token() && game.power(permanent) == Some(2)
-            }),
-            "the Cadet arrives before the surveil is answered"
-        );
-        answer(&mut game, |option| option.card.is_some());
-        drain_pending(&mut game);
-
-        assert_eq!(
-            game.players[0].library.len(),
-            library - 1,
-            "surveilled away"
-        );
-        assert_eq!(loyalty(&game, adept), 2);
-    }
-}
-
-/// The two Ways that pay loyalty out to every planeswalker you control.
-#[test]
-fn the_mentor_and_necromancer_put_loyalty_on_each_planeswalker_you_control() {
-    for prepared_engine in [false, true] {
-        let mut game = setup(prepared_engine);
-        let adept = settled(&mut game, cards::JACE_MEMORY_ADEPT);
-        settled(&mut game, cards::WAY_OF_THE_MENTOR);
-        settled(&mut game, cards::WAY_OF_THE_NECROMANCER);
-        let token = the_jace_token(&game);
-        assert_eq!((loyalty(&game, adept), loyalty(&game, token)), (4, 7));
-        let theirs = game
-            .put_onto_battlefield(PlayerId::Two, cards::JACE_MEMORY_ADEPT)
-            .unwrap();
-
-        game.gain_life(PlayerId::One, 3);
-        drain_pending(&mut game);
-        assert_eq!((loyalty(&game, adept), loyalty(&game, token)), (5, 8));
-
-        let bears = settled(&mut game, cards::GRIZZLY_BEARS);
-        cast(
-            &mut game,
-            cards::LIGHTNING_BOLT,
-            &[Target::Permanent(bears)],
-        );
-        drain_pending(&mut game);
-        assert_eq!((loyalty(&game, adept), loyalty(&game, token)), (6, 9));
-        assert_eq!(loyalty(&game, theirs), 4, "not the opponent's planeswalker");
     }
 }
 

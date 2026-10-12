@@ -33,6 +33,7 @@ mod activation_prohibitions;
 mod activation_timing;
 mod additional_cast_costs;
 mod additional_costs;
+mod aggregate_conditions;
 mod alternative_costs;
 mod alternative_mana;
 mod animate_artifact;
