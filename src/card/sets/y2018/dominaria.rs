@@ -1,4 +1,4 @@
-//! Dominaria cards cataloged for the Vintage Cube pool.
+//! Dominaria cards cataloged for the Vintage Cube pool and for later reprints.
 
 use super::CardRecord;
 use super::PrintingRecord;

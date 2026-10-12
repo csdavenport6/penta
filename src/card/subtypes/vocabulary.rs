@@ -1,6 +1,6 @@
-// CR 205.3g–q, effective August 7, 2026. One spelling per subtype;
+// CR 205.3g–q, effective September 25, 2026. One spelling per subtype;
 // aliases are accepted only when parsing authored or serialized names.
-// https://media.wizards.com/2026/downloads/MagicCompRules%2020260819.txt
+// https://media.wizards.com/2026/downloads/MagicCompRules%2020260925.txt
 subtype_vocabulary! {
     Attraction => ["Attraction"], [Artifact];
     Blood => ["Blood"], [Artifact];
@@ -12,7 +12,6 @@ subtype_vocabulary! {
     Food => ["Food"], [Artifact];
     Fortification => ["Fortification"], [Artifact];
     Gold => ["Gold"], [Artifact];
-    // Added by the September 25, 2026 rules for Reality Fracture.
     Heartwood => ["Heartwood"], [Artifact];
     Incubator => ["Incubator"], [Artifact];
     Infinity => ["Infinity"], [Artifact];
