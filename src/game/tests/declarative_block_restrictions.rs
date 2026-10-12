@@ -471,6 +471,47 @@ fn amrou_kithkin_reads_a_blockers_statically_modified_power() {
 }
 
 #[test]
+fn tetsuko_umezawa_fugitive_reads_either_stat_of_each_attacker_as_it_stands() {
+    // Tetsuko is a 1/3, Savannah Lions a 2/1, and Grizzly Bears a 2/2.
+    let (mut game, attackers, blocker) = blocking_game(
+        &[
+            cards::TETSUKO_UMEZAWA_FUGITIVE,
+            cards::SAVANNAH_LIONS,
+            cards::GRIZZLY_BEARS,
+        ],
+        cards::GRIZZLY_BEARS,
+    );
+    assert!(
+        !offers_pair(&game, blocker, attackers[0]),
+        "power 1 is enough on its own"
+    );
+    assert!(
+        !offers_pair(&game, blocker, attackers[1]),
+        "toughness 1 is enough on its own"
+    );
+    assert!(offers_pair(&game, blocker, attackers[2]));
+
+    game.battlefield
+        .push(creature(21_150, cards::CRUSADE, PlayerId::One));
+    assert!(
+        offers_pair(&game, blocker, attackers[1]),
+        "Crusade makes the Lions a 3/2, so neither stat qualifies"
+    );
+}
+
+#[test]
+fn tetsuko_umezawa_fugitive_shields_only_her_controllers_creatures() {
+    let (mut game, attackers, blocker) =
+        blocking_game(&[cards::SAVANNAH_LIONS], cards::GRIZZLY_BEARS);
+    game.battlefield.push(creature(
+        21_151,
+        cards::TETSUKO_UMEZAWA_FUGITIVE,
+        PlayerId::Two,
+    ));
+    assert!(offers_pair(&game, blocker, attackers[0]));
+}
+
+#[test]
 fn prophecy_brawlers_switch_both_restrictions_with_untapped_lands() {
     for definition in [cards::BRANDED_BRAWLERS, cards::VETERAN_BRAWLERS] {
         let (mut game, attackers, blocker) = blocking_game(&[cards::SAVANNAH_LIONS], definition);

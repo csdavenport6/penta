@@ -452,7 +452,6 @@ mod spree;
 mod stack_target_changes;
 mod stale_followups;
 mod stat_counters;
-mod stat_gated_evasion;
 mod state_triggers_and_life;
 mod static_animation;
 mod static_keyword_predicates;
