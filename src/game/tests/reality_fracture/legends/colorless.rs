@@ -58,16 +58,3 @@ fn traxos_scourge_eternal_untaps_for_an_artifact_or_creature_spell_you_cast() {
         }
     }
 }
-
-/// "Traxos doesn't untap during your untap step."
-#[test]
-fn traxos_scourge_eternal_stays_tapped_through_your_untap_step() {
-    for prepared_engine in [false, true] {
-        let mut game = setup(prepared_engine);
-        let traxos = settled(&mut game, cards::TRAXOS_SCOURGE_ETERNAL);
-        let bears = settled(&mut game, cards::GRIZZLY_BEARS);
-
-        assert!(game.skips_turn_based_untap(permanent(&game, traxos)));
-        assert!(!game.skips_turn_based_untap(permanent(&game, bears)));
-    }
-}

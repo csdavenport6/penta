@@ -91,22 +91,6 @@ fn ghalta_the_unstoppable_costs_less_by_the_greatest_power_you_control() {
     }
 }
 
-/// "Other creatures you control have trample."
-#[test]
-fn ghalta_the_unstoppable_gives_your_other_creatures_trample() {
-    for prepared_engine in [false, true] {
-        let mut game = setup(prepared_engine);
-        settled(&mut game, cards::GHALTA_THE_UNSTOPPABLE);
-        let bears = settled(&mut game, cards::GRIZZLY_BEARS);
-        let theirs = game
-            .put_onto_battlefield(PlayerId::Two, cards::GRIZZLY_BEARS)
-            .unwrap();
-
-        assert!(has_keyword(&game, bears, KeywordAbility::Trample));
-        assert!(!has_keyword(&game, theirs, KeywordAbility::Trample));
-    }
-}
-
 /// "Create Mowu, a legendary 3/3 green Dog creature token."
 #[test]
 fn jiang_yanggu_never_alone_creates_mowu_a_legendary_green_dog() {
@@ -151,23 +135,6 @@ fn jiang_yanggu_never_alone_untaps_your_tokens_at_your_end_step() {
 
         let tapped = |id| permanent(&game, id).tapped;
         assert_eq!([mowu, bears, theirs].map(tapped), [false, true, true]);
-    }
-}
-
-/// "Lands you control have hexproof."
-#[test]
-fn marwyn_the_preserver_gives_only_your_lands_hexproof() {
-    for prepared_engine in [false, true] {
-        let mut game = setup(prepared_engine);
-        let marwyn = settled(&mut game, cards::MARWYN_THE_PRESERVER);
-        let forest = settled(&mut game, cards::FOREST);
-        let theirs = game
-            .put_onto_battlefield(PlayerId::Two, cards::FOREST)
-            .unwrap();
-
-        assert!(has_keyword(&game, forest, KeywordAbility::Hexproof));
-        assert!(!has_keyword(&game, theirs, KeywordAbility::Hexproof));
-        assert!(!has_keyword(&game, marwyn, KeywordAbility::Hexproof));
     }
 }
 

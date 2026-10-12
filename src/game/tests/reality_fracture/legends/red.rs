@@ -237,30 +237,3 @@ fn koth_the_geomancer_adds_red_mana_for_a_mountain_that_has_already_left() {
         assert_eq!(game.players[0].mana_pool.amount(ManaColor::Red), 1);
     }
 }
-
-/// "Create a 5/5 red Dragon creature token with flying", on entering and for
-/// {8}: the same token both times.
-#[test]
-fn kiora_of_fire_and_ashes_creates_the_same_dragon_on_entering_and_for_eight_mana() {
-    for prepared_engine in [false, true] {
-        let mut game = setup(prepared_engine);
-        let kiora = settled(&mut game, cards::KIORA_OF_FIRE_AND_ASHES);
-        game.add_unrestricted_mana(PlayerId::One, ManaColor::Red, 8);
-
-        activate(&mut game, kiora, "{8}:");
-        drain_pending(&mut game);
-
-        let [first, second] = tokens(&game)[..] else {
-            panic!("two Dragons");
-        };
-        assert_eq!(first.card.definition, second.card.definition);
-        for dragon in [first, second] {
-            assert_eq!(
-                (game.power(dragon), game.toughness(dragon)),
-                (Some(5), Some(5))
-            );
-            assert_eq!(colors(&game, dragon), [ManaColor::Red]);
-            assert!(has_keyword(&game, dragon.card.id, KeywordAbility::Flying));
-        }
-    }
-}

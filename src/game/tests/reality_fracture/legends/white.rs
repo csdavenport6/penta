@@ -182,7 +182,6 @@ fn ghalta_the_immovable_lets_your_defenders_attack_and_not_the_opponents() {
         settled(&mut game, cards::GHALTA_THE_IMMOVABLE);
 
         assert!(game.can_attack(permanent(&game, wall)));
-        game.active_player = PlayerId::Two;
         assert!(!game.can_attack(permanent(&game, theirs)));
     }
 }
@@ -436,14 +435,6 @@ fn rescue_girl_returns_another_permanent_of_yours_only_during_your_turn() {
         assert!(!on_battlefield(&game, mox));
         assert_eq!(game.players[0].hand.len(), 1);
     }
-}
-
-/// Teyo cast from hand with flash, his trigger aimed at `target`.
-fn teyo_entering_at(game: &mut Game, teyo: CardDefinitionId, target: GameObjectId) {
-    cast(game, teyo, &[]);
-    run_to_decision(game).expect("the trigger chooses its target");
-    choose(game, PlayerId::One, target);
-    drain_pending(game);
 }
 
 /// "Target permanent you control gains hexproof until end of turn. Put a

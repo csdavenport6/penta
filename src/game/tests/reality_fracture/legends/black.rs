@@ -86,10 +86,7 @@ fn teyo_diamondblade_mage_gives_a_planeswalker_deathtouch_and_a_loyalty_counter(
         let jace = settled(&mut game, cards::JACE_MEMORY_ADEPT);
         let before = permanent(&game, jace).counters(CounterKind::Loyalty);
 
-        cast(&mut game, cards::TEYO_DIAMONDBLADE_MAGE, &[]);
-        run_to_decision(&mut game).expect("the trigger chooses its target");
-        choose(&mut game, PlayerId::One, jace);
-        drain_pending(&mut game);
+        teyo_entering_at(&mut game, cards::TEYO_DIAMONDBLADE_MAGE, jace);
 
         assert!(has_keyword(&game, jace, KeywordAbility::Deathtouch));
         let jace = permanent(&game, jace);
@@ -211,5 +208,25 @@ fn winter_tormented_loner_counts_creature_and_planeswalker_cards_in_your_graveya
             (game.power(winter), game.toughness(winter)),
             (Some(2), Some(3))
         );
+    }
+}
+
+/// Winter is a creature he may sacrifice himself, and the reflexive trigger
+/// still asks the opponent once he is gone.
+#[test]
+fn winter_tormented_loner_may_sacrifice_himself() {
+    for prepared_engine in [false, true] {
+        let (mut game, bears, [their_bears, their_angel]) = winter_offering(prepared_engine);
+        let winter = controlled(&game, cards::WINTER_TORMENTED_LONER)[0];
+
+        choose(&mut game, PlayerId::One, winter);
+        run_to_decision(&mut game).expect("the opponent chooses");
+        choose(&mut game, PlayerId::Two, their_angel);
+        drain_pending(&mut game);
+
+        assert!(!on_battlefield(&game, winter));
+        assert!(on_battlefield(&game, bears));
+        assert!(on_battlefield(&game, their_bears));
+        assert!(!on_battlefield(&game, their_angel));
     }
 }

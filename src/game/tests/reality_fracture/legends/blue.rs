@@ -360,3 +360,26 @@ fn geist_of_saint_thalia_discounts_only_your_noncreature_spells() {
         assert!(!can_cast(&game, PlayerId::Two, theirs));
     }
 }
+
+/// A Fblthp who has left before his trigger resolves is a new object where
+/// he lies, so he stays there; the library is shuffled all the same.
+#[test]
+fn fblthp_impossibly_lost_stays_where_he_went_if_he_left_before_resolving() {
+    for prepared_engine in [false, true] {
+        let mut game = setup(prepared_engine);
+        stock_library(&mut game);
+        let fblthp = settled(&mut game, cards::FBLTHP_IMPOSSIBLY_LOST);
+        let bears = settled(&mut game, cards::GRIZZLY_BEARS);
+        connect_with(&mut game, bears);
+        game.destroy_permanent(fblthp);
+        drain_pending(&mut game);
+
+        assert_eq!(game.players[0].hand.len(), 2);
+        assert_eq!(game.players[0].library.len(), 8);
+        assert_eq!(game.players[0].graveyard.len(), 1);
+        assert_eq!(
+            game.players[0].graveyard[0].definition,
+            cards::FBLTHP_IMPOSSIBLY_LOST
+        );
+    }
+}

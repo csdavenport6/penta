@@ -486,12 +486,7 @@ fn solarium_sentry_gains_life_only_for_an_opponents_cheap_spell() {
         game.active_player = PlayerId::Two;
         game.priority = PlayerId::Two;
         for (definition, life) in [(cards::GRAY_OGRE, 20), (cards::GRIZZLY_BEARS, 22)] {
-            let spell = game
-                .build_zone(PlayerId::Two, &[definition])
-                .unwrap()
-                .remove(0);
-            let id = spell.id;
-            game.players[1].hand.push(spell);
+            let id = in_hand_of(&mut game, PlayerId::Two, definition);
             for color in ManaColor::COLORS {
                 game.add_unrestricted_mana(PlayerId::Two, color, 3);
             }
