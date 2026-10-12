@@ -20,6 +20,15 @@ the bot-wire epoch.
 
 ## Unreleased
 
+- Implement 46 Reality Fracture legends (collector numbers 195 to 280) from
+  existing effects. Two stay unsupported. Jiang Yanggu, Alone needs an attack
+  matcher that counts only the creatures declared against the same player; the
+  declaration-size range also counts attackers aimed at that player's
+  planeswalkers. Titanbones, Towering Heart needs "when you discard this card"
+  heard from wherever the discard put the card; a trigger listens from one
+  zone, so a graveyard listener would miss a discard that Rest in Peace exiles
+  instead. Protocol, checkpoint, and replay versions are unchanged.
+
 - Implement 44 Reality Fracture multicolor cards, artifacts, and lands
   (collector numbers 121 to 194) from existing effects. Protocol, checkpoint,
   and replay versions are unchanged.

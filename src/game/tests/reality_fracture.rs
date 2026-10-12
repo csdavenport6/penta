@@ -16,6 +16,7 @@ mod black;
 mod blue;
 mod green;
 mod lands;
+mod legends;
 mod multicolor;
 mod red;
 mod white;
@@ -103,6 +104,29 @@ fn attack_with(game: &mut Game, attacker: GameObjectId) {
     drain_pending(game);
 }
 
+/// Player one's creature `attacker` attacks player two, nobody blocks, and
+/// combat damage is dealt, with whatever that triggered still waiting.
+fn connect_with(game: &mut Game, attacker: GameObjectId) {
+    attack_with(game, attacker);
+    game.finish_declaring_blockers();
+    game.deal_combat_damage();
+}
+
+/// Puts a card with `definition` into `player`'s hand.
+fn in_hand_of(game: &mut Game, player: PlayerId, definition: CardDefinitionId) -> GameObjectId {
+    let card = game.build_zone(player, &[definition]).unwrap().remove(0);
+    let id = card.id;
+    game.players[player.index()].hand.push(card);
+    id
+}
+
+/// Whether `player` could cast the card `id` with the mana they have.
+fn can_cast(game: &Game, player: PlayerId, id: GameObjectId) -> bool {
+    game.legal_actions(player)
+        .iter()
+        .any(|action| matches!(action, Action::CastSpell { card, .. } if *card == id))
+}
+
 /// Player one's turn moves from the second main phase to the end step, with
 /// the mana left over from casting gone rather than burning anybody.
 fn end_step_begins(game: &mut Game) {
@@ -164,6 +188,15 @@ fn tokens(game: &Game) -> Vec<&Permanent> {
 /// Whether the permanent `id` has `keyword`.
 fn has_keyword(game: &Game, id: GameObjectId, keyword: KeywordAbility) -> bool {
     game.permanent_has_executable_keyword(permanent(game, id), keyword)
+}
+
+/// The colors `permanent` is.
+fn colors(game: &Game, permanent: &Permanent) -> Vec<ManaColor> {
+    ManaColor::COLORS
+        .into_iter()
+        .zip(game.permanent_colors(permanent))
+        .filter_map(|(color, has)| has.then_some(color))
+        .collect()
 }
 
 /// Gives player one six mana of each color, more than any card here costs.

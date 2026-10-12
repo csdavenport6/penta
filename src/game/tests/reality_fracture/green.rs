@@ -336,15 +336,6 @@ fn hexhaven_invigorator_fetches_up_to_as_many_lands_as_the_damage_it_was_dealt()
     }
 }
 
-/// The colors `permanent` is.
-fn colors(game: &Game, permanent: &Permanent) -> Vec<ManaColor> {
-    ManaColor::COLORS
-        .into_iter()
-        .zip(game.permanent_colors(permanent))
-        .filter_map(|(color, has)| has.then_some(color))
-        .collect()
-}
-
 /// The colors of mana player one could tap `source` for.
 fn mana_colors(game: &Game, source: GameObjectId) -> Vec<ManaColor> {
     game.legal_actions(PlayerId::One)
