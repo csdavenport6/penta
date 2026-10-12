@@ -20,6 +20,10 @@ the bot-wire epoch.
 
 ## Unreleased
 
+- Implement 35 Reality Fracture cards in red and green (collector numbers 72
+  to 120) from existing effects, with the predefined Heartwood token as shared
+  set vocabulary. Protocol, checkpoint, and replay versions are unchanged.
+
 - Implement 38 Reality Fracture cards in white, blue, and black (collector
   numbers 6 to 69) from existing effects. Return to the Light Realms stays
   unsupported: an Aura card put onto the battlefield without being cast needs

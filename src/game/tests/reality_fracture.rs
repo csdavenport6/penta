@@ -12,6 +12,8 @@ use super::*;
 
 mod black;
 mod blue;
+mod green;
+mod red;
 mod white;
 
 /// Whether the permanent `id` is still on the battlefield.
@@ -52,6 +54,21 @@ fn choose(game: &mut Game, player: PlayerId, id: GameObjectId) {
         },
     )
     .unwrap();
+}
+
+/// Player one activates `source`'s ability whose text starts with `prefix` at
+/// exactly `targets`, leaving it on the stack.
+fn activate_at(game: &mut Game, source: GameObjectId, prefix: &str, targets: &[Target]) {
+    let action = activations(game, source, prefix)
+        .into_iter()
+        .find(|action| match action {
+            Action::ActivateAbility {
+                targets: chosen, ..
+            } => chosen.iter().flat_map(TargetSelection::targets).eq(targets),
+            _ => false,
+        })
+        .unwrap_or_else(|| panic!("{prefix} can be activated at those targets"));
+    game.apply(PlayerId::One, action).unwrap();
 }
 
 /// Player one's creature `attacker` is declared as an attacker and the
