@@ -5,7 +5,8 @@
 //! zero or with nothing, so each case here runs the printed card in both
 //! engine modes and checks the outcome the Oracle text and rulings require.
 use super::empower_jace::{
-    activate, activations, cast, casts, permanent, permanent_mut, settled, stock_library,
+    activate, activations, cast, casts, permanent, permanent_mut, reconstructed, settled,
+    stock_library,
 };
 use super::mana_pool_doubling::commander_game;
 use super::prepare_cards::{exiled_copies, is_prepared, take_an_upkeep};

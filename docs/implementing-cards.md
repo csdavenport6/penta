@@ -811,19 +811,21 @@ recurring clauses. Later sets import them from there:
 | Printed clause | Helper |
 | --- | --- |
 | "This creature enters prepared." | `enters_prepared()` |
+| The same, followed by the reminder text | `enters_prepared_with_reminder()` |
 | "... becomes prepared." | `become_prepared(recipient)` |
 | "... becomes unprepared." | `become_unprepared(recipient)` |
 | "At the beginning of your upkeep, if this creature isn't prepared, it becomes prepared." | `reprepare_at_upkeep()` |
+| The same, followed by the reminder text | `reprepare_at_upkeep_with_reminder()` |
 
 `enters_prepared()` and `reprepare_at_upkeep()` are whole ability clauses. Most
 printings follow the clause with the mechanic's reminder text, "(While it's
-prepared, you may cast a copy of its spell. Doing so unprepares it.)"; use
-`enters_prepared_with_reminder()` or `reprepare_at_upkeep_with_reminder()` for
-those. A card that prints its own name instead of "this creature" keeps the
-helper and adds `.override_text(...)`. `become_prepared` and
-`become_unprepared` are effects: compose them into whatever trigger,
-activation, or payment the card prints, with `EffectRecipientDef::Source` for
-"this creature" or a target for "target creature becomes prepared".
+prepared, you may cast a copy of its spell. Doing so unprepares it.)"; the
+`_with_reminder` forms carry it. A card that prints its own name instead of
+"this creature" keeps the helper and adds `.override_text(...)`.
+`become_prepared` and `become_unprepared` are effects: compose them into
+whatever trigger, activation, or payment the card prints, with
+`EffectRecipientDef::Source` for "this creature" or a target for "target
+creature becomes prepared".
 
 The designation and its exiled copy are the engine's job, not the card's:
 

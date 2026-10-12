@@ -8,7 +8,7 @@ use super::*;
 /// Puts player one's preparation card `definition` onto the battlefield,
 /// where it enters prepared, and returns it with the copy of `spell` that
 /// made in exile.
-fn enters_prepared(
+fn prepared_on_entry(
     game: &mut Game,
     definition: CardDefinitionId,
     spell: &str,
@@ -45,7 +45,7 @@ fn seed_suture_puts_a_counter_on_its_target_and_gains_its_caster_a_life() {
     for prepared_engine in [false, true] {
         let mut game = setup(prepared_engine);
         let (angel, suture) =
-            enters_prepared(&mut game, cards::BLOSSOM_BLESSED_ANGEL, "Seed Suture");
+            prepared_on_entry(&mut game, cards::BLOSSOM_BLESSED_ANGEL, "Seed Suture");
         let life = game.players[0].life;
 
         cast_copy(&mut game, suture, &[Target::Permanent(angel)]);
@@ -71,7 +71,7 @@ fn vigorbloom_vanguard_gives_vigilance_to_your_creatures_that_carry_a_counter() 
     for prepared_engine in [false, true] {
         let mut game = setup(prepared_engine);
         let (vanguard, suture) =
-            enters_prepared(&mut game, cards::VIGORBLOOM_VANGUARD, "Seed Suture");
+            prepared_on_entry(&mut game, cards::VIGORBLOOM_VANGUARD, "Seed Suture");
         let bears = settled(&mut game, cards::GRIZZLY_BEARS);
         let theirs = game
             .put_onto_battlefield(PlayerId::Two, cards::GRIZZLY_BEARS)
@@ -101,7 +101,7 @@ fn peer_review_creates_a_cadet_and_then_surveils() {
     for prepared_engine in [false, true] {
         let mut game = setup(prepared_engine);
         stock_library(&mut game);
-        let (_, review) = enters_prepared(&mut game, cards::FATEHOLD_CHRONOLOGIST, "Peer Review");
+        let (_, review) = prepared_on_entry(&mut game, cards::FATEHOLD_CHRONOLOGIST, "Peer Review");
 
         cast_copy(&mut game, review, &[]);
         run_to_decision(&mut game).expect("the surveil asks about the top card");
@@ -133,7 +133,7 @@ fn omit_variables_mills_three_and_can_bring_void_extrapolator_to_threshold() {
         let mut game = setup(prepared_engine);
         stock_library(&mut game);
         let (extrapolator, omit) =
-            enters_prepared(&mut game, cards::VOID_EXTRAPOLATOR, "Omit Variables");
+            prepared_on_entry(&mut game, cards::VOID_EXTRAPOLATOR, "Omit Variables");
         put_in_graveyard(&mut game, &[cards::MOUNTAIN; 4]);
         let stats = |game: &Game| {
             let extrapolator = permanent(game, extrapolator);
@@ -230,7 +230,7 @@ fn paradox_shaper_buries_a_card_from_your_own_graveyard_under_your_library() {
 fn vicious_verse_deals_one_damage_to_an_opponent_and_never_to_its_caster() {
     for prepared_engine in [false, true] {
         let mut game = setup(prepared_engine);
-        let (_, verse) = enters_prepared(&mut game, cards::HALLWAY_HECKLER, "Vicious Verse");
+        let (_, verse) = prepared_on_entry(&mut game, cards::HALLWAY_HECKLER, "Vicious Verse");
         mana_to_spare(&mut game);
         assert_eq!(
             castable_targets(&game, verse),
@@ -250,7 +250,8 @@ fn vicious_verse_deals_one_damage_to_an_opponent_and_never_to_its_caster() {
 fn improvised_act_cast(prepared_engine: bool, hand_size: usize) -> (Game, GameObjectId) {
     let mut game = setup(prepared_engine);
     stock_library(&mut game);
-    let (battlemage, act) = enters_prepared(&mut game, cards::POMPOUS_BATTLEMAGE, "Improvised Act");
+    let (battlemage, act) =
+        prepared_on_entry(&mut game, cards::POMPOUS_BATTLEMAGE, "Improvised Act");
     for _ in 0..hand_size {
         hand(&mut game, cards::MOUNTAIN);
     }
@@ -316,7 +317,7 @@ fn pompous_battlemage_grows_from_casting_its_own_prepare_spell() {
 fn enroot_puts_a_land_card_from_your_library_into_your_graveyard() {
     for prepared_engine in [false, true] {
         let mut game = setup(prepared_engine);
-        let (_, enroot) = enters_prepared(&mut game, cards::CARNIVOROUS_CULTIVATOR, "Enroot");
+        let (_, enroot) = prepared_on_entry(&mut game, cards::CARNIVOROUS_CULTIVATOR, "Enroot");
         game.players[0].library = game
             .build_zone(
                 PlayerId::One,
@@ -365,7 +366,7 @@ fn carnivorous_cultivator_returns_a_land_card_from_your_graveyard_when_it_connec
 fn soul_tether_creates_a_heartwood_token() {
     for prepared_engine in [false, true] {
         let mut game = setup(prepared_engine);
-        let (_, tether) = enters_prepared(&mut game, cards::KONSTRARI_IMPROVISER, "Soul Tether");
+        let (_, tether) = prepared_on_entry(&mut game, cards::KONSTRARI_IMPROVISER, "Soul Tether");
 
         cast_copy(&mut game, tether, &[]);
         drain_pending(&mut game);
@@ -385,7 +386,7 @@ fn soul_tether_creates_a_heartwood_token() {
 /// this many cards in each player's hand and ten in each library.
 fn arc_of_fortune_cast(prepared_engine: bool, hands: [usize; 2]) -> Game {
     let mut game = setup(prepared_engine);
-    let (_, arc) = enters_prepared(&mut game, cards::VARIABLE_CHASER, "Arc of Fortune");
+    let (_, arc) = prepared_on_entry(&mut game, cards::VARIABLE_CHASER, "Arc of Fortune");
     for (player, hand) in [PlayerId::One, PlayerId::Two].into_iter().zip(hands) {
         game.players[player.index()].library =
             game.build_zone(player, &[cards::FOREST; 10]).unwrap();
@@ -493,6 +494,32 @@ fn arc_of_fortune_moves_only_the_hands_of_players_who_chose_to() {
                 };
                 assert_eq!(piles(&game, player), expected, "{answers:?}");
             }
+        }
+    }
+}
+
+/// The second question is asked inside the first one's answer. A game rebuilt
+/// from a checkpoint taken between the two still knows which answer that was.
+#[test]
+fn arc_of_fortune_keeps_the_first_answer_across_a_checkpoint() {
+    for prepared_engine in [false, true] {
+        for first_discards in [true, false] {
+            let mut game = arc_of_fortune_cast(prepared_engine, [2, 3]);
+            answer_arc_of_fortune(&mut game, first_discards);
+            run_to_decision(&mut game).expect("the second player is asked");
+
+            let mut game = reconstructed(&game);
+            let (second, _) = answer_arc_of_fortune(&mut game, false);
+            drain_pending(&mut game);
+
+            assert_eq!(second, PlayerId::Two);
+            let expected = if first_discards {
+                (7, 2, 3)
+            } else {
+                (2, 0, 10)
+            };
+            assert_eq!(piles(&game, PlayerId::One), expected);
+            assert_eq!(piles(&game, PlayerId::Two), (3, 0, 10));
         }
     }
 }

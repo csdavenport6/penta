@@ -204,7 +204,7 @@ fn opposing_library(game: &Game) -> Vec<GameObjectId> {
 
 /// The game rebuilt from what player one can see of it, in the same engine
 /// mode.
-fn reconstructed(game: &Game) -> Game {
+pub(super) fn reconstructed(game: &Game) -> Game {
     let (wire, hidden) = checkpoint_fixture(game, PlayerId::One);
     let mut rebuilt =
         Game::from_observation_checkpoint(game.catalog.clone(), game.format, &wire, &hidden, 7)
