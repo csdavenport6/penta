@@ -13,29 +13,6 @@ fn eye_of_jace_surveilling(prepared_engine: bool, graveyard: usize) -> (Game, Ga
     (game, eye)
 }
 
-/// Player one answers a surveil 1 by putting the card into their graveyard,
-/// or by leaving it on top of their library.
-fn surveil(game: &mut Game, into_graveyard: bool) {
-    let decision = game
-        .observe(PlayerId::One)
-        .decision
-        .expect("the surveil is waiting");
-    let options = if into_graveyard {
-        vec![decision.options[0].id]
-    } else {
-        Vec::new()
-    };
-    game.apply(
-        PlayerId::One,
-        Action::ChooseDecision {
-            decision: decision.id,
-            options,
-        },
-    )
-    .unwrap();
-    drain_pending(game);
-}
-
 /// "Surveil 1. Then if there are seven or more cards in your graveyard,
 /// sacrifice this artifact, it deals 2 damage to each opponent, and you gain
 /// 2 life": the count is taken after the surveil, so the card it just put

@@ -20,6 +20,19 @@ the bot-wire epoch.
 
 ## Unreleased
 
+- Declare Reality Fracture's 21 preparation cards and their eight alternate
+  printings, and implement 15 of them on the prepare helpers. Seed Suture,
+  Peer Review, Omit Variables, Vicious Verse, and Soul Tether are each printed
+  on three cards and share one rules constant apiece. Six stay unsupported
+  with an audit naming the gap: Diviner of Victory and Prudent Fateseer need a
+  scry-or-surveil trigger event, Bloodline Recollector the creatures-died
+  count in an intervening-if, Whiplash Wordsmith a noncombat-damage history
+  flag, Pyre Rhymer a temporary mana trigger for Molten Tide, and Heartwood
+  Crafter a mana restriction that forbids one use. Secrets of Strixhaven gains
+  `enters_prepared_with_reminder` and `reprepare_at_upkeep_with_reminder` for
+  the printings that carry the mechanic's reminder text. Protocol, checkpoint,
+  and replay versions are unchanged.
+
 - Implement 46 Reality Fracture legends (collector numbers 195 to 280) from
   existing effects. Two stay unsupported. Jiang Yanggu, Alone needs an attack
   matcher that counts only the creatures declared against the same player; the

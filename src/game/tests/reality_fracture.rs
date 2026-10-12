@@ -8,6 +8,7 @@ use super::empower_jace::{
     activate, activations, cast, casts, permanent, permanent_mut, settled, stock_library,
 };
 use super::mana_pool_doubling::commander_game;
+use super::prepare_cards::{exiled_copies, is_prepared, take_an_upkeep};
 use super::woe_hob_completion::{hand, setup};
 use super::*;
 
@@ -18,6 +19,7 @@ mod green;
 mod lands;
 mod legends;
 mod multicolor;
+mod prepare;
 mod red;
 mod white;
 
@@ -162,6 +164,29 @@ fn run_to_decision(game: &mut Game) -> Option<DecisionObservation> {
         game.apply(player, Action::PassPriority).unwrap();
     }
     panic!("the stack never settled");
+}
+
+/// Player one answers a surveil 1 by putting the card into their graveyard,
+/// or by leaving it on top of their library.
+fn surveil(game: &mut Game, into_graveyard: bool) {
+    let decision = game
+        .observe(PlayerId::One)
+        .decision
+        .expect("the surveil is waiting");
+    let options = if into_graveyard {
+        vec![decision.options[0].id]
+    } else {
+        Vec::new()
+    };
+    game.apply(
+        PlayerId::One,
+        Action::ChooseDecision {
+            decision: decision.id,
+            options,
+        },
+    )
+    .unwrap();
+    drain_pending(game);
 }
 
 /// Player one's permanents made from `definition`.

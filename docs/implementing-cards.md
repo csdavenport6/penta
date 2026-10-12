@@ -794,14 +794,16 @@ a double-faced card, the permanent's name alone is not a lookup alias.
 Either part may be `CardRules::unsupported()`. Declare a new preparation card
 with both names as soon as it is inventoried, even when neither part has rules:
 the prepare spell's name is only nameable (CR 722.5) once the second part
-exists. The card
-stays unsupported until both parts are complete, and its audit comment names
-the gap in whichever part is missing.
+exists. Until both parts are complete, leave both unsupported: an unsupported
+card exposes no executable clause, and the registry-integrity test rejects one
+with a castable part. Its audit comment names the gap in whichever part is
+missing.
 
 Give the prepare spell ordinary spell rules. When it is an existing card,
 reuse that record's rules as above. When one prepare spell is printed on
 several cards, share one rules constant in the set preamble so the copies
-agree.
+agree. A printing that is still unsupported takes the constant when it
+becomes supported.
 
 The Secrets of Strixhaven module, where the mechanic debuted, owns the
 recurring clauses. Later sets import them from there:
@@ -813,13 +815,15 @@ recurring clauses. Later sets import them from there:
 | "... becomes unprepared." | `become_unprepared(recipient)` |
 | "At the beginning of your upkeep, if this creature isn't prepared, it becomes prepared." | `reprepare_at_upkeep()` |
 
-`enters_prepared()` and `reprepare_at_upkeep()` are whole ability clauses. A
-card that prints its own name instead of "this creature" keeps the helper and
-adds `.override_text(...)`. `become_prepared` and `become_unprepared` are
-effects: compose them into whatever trigger, activation, or payment the card
-prints, with `EffectRecipientDef::Source` for "this creature" or a target for
-"target creature becomes prepared". The helpers' default text carries no
-reminder text.
+`enters_prepared()` and `reprepare_at_upkeep()` are whole ability clauses. Most
+printings follow the clause with the mechanic's reminder text, "(While it's
+prepared, you may cast a copy of its spell. Doing so unprepares it.)"; use
+`enters_prepared_with_reminder()` or `reprepare_at_upkeep_with_reminder()` for
+those. A card that prints its own name instead of "this creature" keeps the
+helper and adds `.override_text(...)`. `become_prepared` and
+`become_unprepared` are effects: compose them into whatever trigger,
+activation, or payment the card prints, with `EffectRecipientDef::Source` for
+"this creature" or a target for "target creature becomes prepared".
 
 The designation and its exiled copy are the engine's job, not the card's:
 

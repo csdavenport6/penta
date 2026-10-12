@@ -109,7 +109,7 @@ fn rules_of(game: &Game, definition: CardDefinitionId) -> CardRules {
         .rules
 }
 
-fn is_prepared(game: &Game, permanent: GameObjectId) -> bool {
+pub(super) fn is_prepared(game: &Game, permanent: GameObjectId) -> bool {
     game.battlefield
         .iter()
         .find(|candidate| candidate.card.id == permanent)
@@ -120,7 +120,7 @@ fn is_prepared(game: &Game, permanent: GameObjectId) -> bool {
 
 /// Everything `player` has in exile, by name. Nothing but prepare-spell
 /// copies is exiled in these tests.
-fn exiled_copies(game: &Game, player: PlayerId) -> Vec<(GameObjectId, String)> {
+pub(super) fn exiled_copies(game: &Game, player: PlayerId) -> Vec<(GameObjectId, String)> {
     game.players[player.index()]
         .exile
         .iter()
@@ -195,7 +195,7 @@ fn assert_resolves_drawing_three(game: &mut Game) {
 
 /// Runs one of player one's upkeeps, reporting how many abilities it put on
 /// the stack or queued before anything resolved.
-fn take_an_upkeep(game: &mut Game) -> usize {
+pub(super) fn take_an_upkeep(game: &mut Game) -> usize {
     game.commit_next_turn(PlayerId::One, Vec::new());
     let triggered = game.stack.len() + game.pending_triggers.len();
     drain_pending(game);

@@ -157,6 +157,25 @@ pub const fn reprepare_at_upkeep() -> AbilityDef {
     )
 }
 
+/// [`enters_prepared`] as most printings word it, with the mechanic's
+/// reminder text.
+#[must_use]
+pub const fn enters_prepared_with_reminder() -> AbilityDef {
+    enters_prepared().override_text(
+        "This creature enters prepared. (While it's prepared, you may cast a copy of its spell. \
+         Doing so unprepares it.)",
+    )
+}
+
+/// [`reprepare_at_upkeep`] with the same reminder text.
+#[must_use]
+pub const fn reprepare_at_upkeep_with_reminder() -> AbilityDef {
+    reprepare_at_upkeep().override_text(
+        "At the beginning of your upkeep, if this creature isn't prepared, it becomes prepared. \
+         (While it's prepared, you may cast a copy of its spell. Doing so unprepares it.)",
+    )
+}
+
 const SPIRIT_TOKEN: TokenCharacteristics =
     TokenCharacteristics::creature(&["Spirit"], &[ManaColor::Red, ManaColor::White], 2, 2)
         .with_art(CardArt::new(
