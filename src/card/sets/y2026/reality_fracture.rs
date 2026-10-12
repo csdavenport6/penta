@@ -4185,28 +4185,24 @@ pub(in crate::card::sets) static PRIMAL_WITCHSTALKER: CardRecord = CardRecord::n
             "When this creature enters, mill four cards. When you do, return target land card from \
              your graveyard to the battlefield tapped. (To mill four cards, put the top four cards \
              of your library into your graveyard.)",
-            EffectDef::Sequence(&[
-                EffectDef::BindOutput {
-                    binding: Binding!("milled"),
-                    effect: &EffectDef::Mill {
+            // "When you do" asks for all four. A library of fewer than four cards has as
+            // many milled as it holds, which is not milling four (CR 701.17b): The Royal
+            // Scions is ruled the same way for drawing fewer than four, and surveil is the
+            // exception only because CR 701.25d makes it one. The library is counted rather
+            // than the cards in the graveyard afterwards, because a milled card that goes
+            // somewhere else instead was still milled (CR 701.17c).
+            EffectDef::IfElseCondition {
+                condition: &TriggerConditionDef::ValueComparison(&ValueComparisonDef {
+                    left: ValueDef::LibrarySize(PlayerRelation::You),
+                    comparison: ComparisonDef::GreaterOrEqual,
+                    right: ValueDef::Constant(4),
+                }),
+                then: &EffectDef::Sequence(&[
+                    EffectDef::Mill {
                         player: EffectRecipientDef::Controller,
                         amount: ValueDef::Constant(4),
                     },
-                },
-                // A library of fewer than four cards has as many milled as it holds, which is
-                // not milling four (CR 701.17b), so "when you do" asks for all four: The Royal
-                // Scions is ruled the same way for drawing fewer than four. Surveil is the
-                // exception only because CR 701.25d makes it one.
-                EffectDef::IfCondition {
-                    condition: &TriggerConditionDef::ObjectSetCount(&ObjectSetCountConditionDef {
-                        objects: &ObjectSetDef::Binding(Binding!("milled")),
-                        predicate: ObjectSetPredicateDef {
-                            filter: None,
-                            comparison: ComparisonDef::GreaterOrEqual,
-                            amount: 4,
-                        },
-                    }),
-                    then: &EffectDef::ReflexiveTrigger(&AbilityDef::triggered_with_targets(
+                    EffectDef::ReflexiveTrigger(&AbilityDef::triggered_with_targets(
                         "When you do, return target land card from your graveyard to the \
                          battlefield tapped.",
                         TriggerEventDef::Reflexive,
@@ -4230,8 +4226,12 @@ pub(in crate::card::sets) static PRIMAL_WITCHSTALKER: CardRecord = CardRecord::n
                             },
                         },
                     )),
+                ]),
+                otherwise: &EffectDef::Mill {
+                    player: EffectRecipientDef::Controller,
+                    amount: ValueDef::Constant(4),
                 },
-            ]),
+            },
         ),
     ]),
 );

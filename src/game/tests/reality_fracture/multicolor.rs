@@ -373,6 +373,36 @@ fn primal_witchstalker_returns_a_land_it_just_milled_tapped() {
     }
 }
 
+/// A milled card that goes somewhere else instead was still milled
+/// (CR 701.17c), so four cards were: Blightsteel Colossus shuffles itself
+/// back, and the land beside it is still returned.
+#[test]
+fn primal_witchstalker_counts_a_milled_card_that_went_elsewhere() {
+    for prepared_engine in [false, true] {
+        let mut game = setup(prepared_engine);
+        game.players[0].library = game
+            .build_zone(
+                PlayerId::One,
+                &[
+                    cards::GRIZZLY_BEARS,
+                    cards::FOREST,
+                    cards::BLIGHTSTEEL_COLOSSUS,
+                    cards::GRIZZLY_BEARS,
+                ],
+            )
+            .unwrap();
+
+        cast(&mut game, cards::PRIMAL_WITCHSTALKER, &[]);
+        run_to_decision(&mut game).expect("the reflexive trigger chooses its target");
+        let lands = offered(&game, PlayerId::One);
+        choose(&mut game, PlayerId::One, lands[0]);
+        drain_pending(&mut game);
+
+        assert_eq!(game.players[0].library.len(), 1, "only the Colossus");
+        assert_eq!(controlled(&game, cards::FOREST).len(), 1);
+    }
+}
+
 /// A library of three cannot have four cards milled from it (CR 701.17b), so
 /// "when you do" never happens, whatever is already in the graveyard.
 #[test]
