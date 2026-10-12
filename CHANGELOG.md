@@ -23,7 +23,8 @@ the bot-wire epoch.
 - Declare Reality Fracture's 21 preparation cards and their eight alternate
   printings, and implement 15 of them on the prepare helpers. Seed Suture,
   Peer Review, Omit Variables, Vicious Verse, and Soul Tether are each printed
-  on three cards and share one rules constant apiece. Six stay unsupported
+  on three cards and have one rules constant apiece, which their supported
+  printings share. Six stay unsupported, neither part given rules, each
   with an audit naming the gap: Diviner of Victory and Prudent Fateseer need a
   scry-or-surveil trigger event, Bloodline Recollector the creatures-died
   count in an intervening-if, Whiplash Wordsmith a noncombat-damage history

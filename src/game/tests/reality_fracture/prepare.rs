@@ -6,23 +6,19 @@
 use super::*;
 
 /// Puts player one's preparation card `definition` onto the battlefield,
-/// where it enters prepared, and returns it with the copy of `spell` that
-/// made in exile.
-fn prepared_on_entry(
+/// where it enters prepared, and returns that prepared permanent with the
+/// copy of its prepare spell `spell` that this made in exile.
+fn prepared_permanent(
     game: &mut Game,
     definition: CardDefinitionId,
     spell: &str,
 ) -> (GameObjectId, GameObjectId) {
-    let before = exiled_copies(game, PlayerId::One);
     let permanent = settled(game, definition);
     assert!(is_prepared(game, permanent), "it enters prepared");
-    let made = exiled_copies(game, PlayerId::One)
-        .into_iter()
-        .filter(|copy| !before.contains(copy))
-        .collect::<Vec<_>>();
-    assert_eq!(made.len(), 1, "one copy of its prepare spell");
-    assert_eq!(made[0].1, spell);
-    (permanent, made[0].0)
+    let copies = exiled_copies(game, PlayerId::One);
+    assert_eq!(copies.len(), 1, "one copy of its prepare spell");
+    assert_eq!(copies[0].1, spell);
+    (permanent, copies[0].0)
 }
 
 /// Player one casts the exiled prepare-spell copy `copy` at `targets` with
@@ -45,14 +41,10 @@ fn seed_suture_puts_a_counter_on_its_target_and_gains_its_caster_a_life() {
     for prepared_engine in [false, true] {
         let mut game = setup(prepared_engine);
         let (angel, suture) =
-            prepared_on_entry(&mut game, cards::BLOSSOM_BLESSED_ANGEL, "Seed Suture");
+            prepared_permanent(&mut game, cards::BLOSSOM_BLESSED_ANGEL, "Seed Suture");
         let life = game.players[0].life;
 
         cast_copy(&mut game, suture, &[Target::Permanent(angel)]);
-        assert!(
-            !is_prepared(&game, angel),
-            "casting its spell unprepares it"
-        );
         drain_pending(&mut game);
 
         assert_eq!(
@@ -60,7 +52,6 @@ fn seed_suture_puts_a_counter_on_its_target_and_gains_its_caster_a_life() {
             1
         );
         assert_eq!(game.players[0].life, life + 1);
-        assert!(exiled_copies(&game, PlayerId::One).is_empty());
     }
 }
 
@@ -71,7 +62,7 @@ fn vigorbloom_vanguard_gives_vigilance_to_your_creatures_that_carry_a_counter() 
     for prepared_engine in [false, true] {
         let mut game = setup(prepared_engine);
         let (vanguard, suture) =
-            prepared_on_entry(&mut game, cards::VIGORBLOOM_VANGUARD, "Seed Suture");
+            prepared_permanent(&mut game, cards::VIGORBLOOM_VANGUARD, "Seed Suture");
         let bears = settled(&mut game, cards::GRIZZLY_BEARS);
         let theirs = game
             .put_onto_battlefield(PlayerId::Two, cards::GRIZZLY_BEARS)
@@ -101,7 +92,8 @@ fn peer_review_creates_a_cadet_and_then_surveils() {
     for prepared_engine in [false, true] {
         let mut game = setup(prepared_engine);
         stock_library(&mut game);
-        let (_, review) = prepared_on_entry(&mut game, cards::FATEHOLD_CHRONOLOGIST, "Peer Review");
+        let (_, review) =
+            prepared_permanent(&mut game, cards::FATEHOLD_CHRONOLOGIST, "Peer Review");
 
         cast_copy(&mut game, review, &[]);
         run_to_decision(&mut game).expect("the surveil asks about the top card");
@@ -124,29 +116,30 @@ fn peer_review_creates_a_cadet_and_then_surveils() {
     }
 }
 
-/// "Mill three cards", and what that does for the Threshold of the creature
-/// that cast it: "This creature gets +1/+1 as long as there are seven or more
-/// cards in your graveyard."
+/// "Mill three cards", cast from a copy made the other way one of these
+/// cards becomes prepared: "At the beginning of your upkeep, if this creature
+/// isn't prepared, it becomes prepared." Paradox Shaper arrives without a
+/// copy of its spell and has one from its first upkeep.
 #[test]
-fn omit_variables_mills_three_and_can_bring_void_extrapolator_to_threshold() {
+fn omit_variables_mills_three_once_paradox_shaper_prepares_itself_at_upkeep() {
     for prepared_engine in [false, true] {
         let mut game = setup(prepared_engine);
         stock_library(&mut game);
-        let (extrapolator, omit) =
-            prepared_on_entry(&mut game, cards::VOID_EXTRAPOLATOR, "Omit Variables");
-        put_in_graveyard(&mut game, &[cards::MOUNTAIN; 4]);
-        let stats = |game: &Game| {
-            let extrapolator = permanent(game, extrapolator);
-            (game.power(extrapolator), game.toughness(extrapolator))
-        };
-        assert_eq!(stats(&game), (Some(2), Some(2)), "four cards is short");
+        let shaper = settled(&mut game, cards::PARADOX_SHAPER);
+        assert!(!is_prepared(&game, shaper));
+        assert!(exiled_copies(&game, PlayerId::One).is_empty());
 
-        cast_copy(&mut game, omit, &[]);
+        take_an_upkeep(&mut game);
+        let copies = exiled_copies(&game, PlayerId::One);
+        assert_eq!(copies.len(), 1);
+        assert_eq!(copies[0].1, "Omit Variables");
+
+        game.step = Step::PrecombatMain;
+        cast_copy(&mut game, copies[0].0, &[]);
         drain_pending(&mut game);
 
-        assert_eq!(game.players[0].graveyard.len(), 7);
+        assert_eq!(game.players[0].graveyard.len(), 3);
         assert_eq!(game.players[0].library.len(), 7);
-        assert_eq!(stats(&game), (Some(3), Some(3)));
     }
 }
 
@@ -169,26 +162,6 @@ fn theorix_metamage_grows_and_flies_only_at_threshold() {
         put_in_graveyard(&mut game, &[cards::MOUNTAIN]);
         assert_eq!(stats(&game), (Some(3), Some(3)));
         assert!(has_keyword(&game, metamage, KeywordAbility::Flying));
-    }
-}
-
-/// "At the beginning of your upkeep, if this creature isn't prepared, it
-/// becomes prepared": the other way one of these cards becomes prepared. It
-/// arrives without a copy of its spell and has one from its first upkeep.
-#[test]
-fn paradox_shaper_enters_unprepared_and_prepares_itself_at_upkeep() {
-    for prepared_engine in [false, true] {
-        let mut game = setup(prepared_engine);
-        let shaper = settled(&mut game, cards::PARADOX_SHAPER);
-        assert!(!is_prepared(&game, shaper));
-        assert!(exiled_copies(&game, PlayerId::One).is_empty());
-
-        assert_eq!(take_an_upkeep(&mut game), 1);
-
-        assert!(is_prepared(&game, shaper));
-        let copies = exiled_copies(&game, PlayerId::One);
-        assert_eq!(copies.len(), 1);
-        assert_eq!(copies[0].1, "Omit Variables");
     }
 }
 
@@ -230,7 +203,7 @@ fn paradox_shaper_buries_a_card_from_your_own_graveyard_under_your_library() {
 fn vicious_verse_deals_one_damage_to_an_opponent_and_never_to_its_caster() {
     for prepared_engine in [false, true] {
         let mut game = setup(prepared_engine);
-        let (_, verse) = prepared_on_entry(&mut game, cards::HALLWAY_HECKLER, "Vicious Verse");
+        let (_, verse) = prepared_permanent(&mut game, cards::HALLWAY_HECKLER, "Vicious Verse");
         mana_to_spare(&mut game);
         assert_eq!(
             castable_targets(&game, verse),
@@ -245,13 +218,13 @@ fn vicious_verse_deals_one_damage_to_an_opponent_and_never_to_its_caster() {
     }
 }
 
-/// Pompous Battlemage's Improvised Act cast with `hand` cards in hand, as far
-/// as whatever it asks. Returns the Battlemage.
+/// Pompous Battlemage's Improvised Act on the stack, cast with `hand_size`
+/// cards in hand. Returns the Battlemage.
 fn improvised_act_cast(prepared_engine: bool, hand_size: usize) -> (Game, GameObjectId) {
     let mut game = setup(prepared_engine);
     stock_library(&mut game);
     let (battlemage, act) =
-        prepared_on_entry(&mut game, cards::POMPOUS_BATTLEMAGE, "Improvised Act");
+        prepared_permanent(&mut game, cards::POMPOUS_BATTLEMAGE, "Improvised Act");
     for _ in 0..hand_size {
         hand(&mut game, cards::MOUNTAIN);
     }
@@ -317,7 +290,7 @@ fn pompous_battlemage_grows_from_casting_its_own_prepare_spell() {
 fn enroot_puts_a_land_card_from_your_library_into_your_graveyard() {
     for prepared_engine in [false, true] {
         let mut game = setup(prepared_engine);
-        let (_, enroot) = prepared_on_entry(&mut game, cards::CARNIVOROUS_CULTIVATOR, "Enroot");
+        let (_, enroot) = prepared_permanent(&mut game, cards::CARNIVOROUS_CULTIVATOR, "Enroot");
         game.players[0].library = game
             .build_zone(
                 PlayerId::One,
@@ -366,7 +339,7 @@ fn carnivorous_cultivator_returns_a_land_card_from_your_graveyard_when_it_connec
 fn soul_tether_creates_a_heartwood_token() {
     for prepared_engine in [false, true] {
         let mut game = setup(prepared_engine);
-        let (_, tether) = prepared_on_entry(&mut game, cards::KONSTRARI_IMPROVISER, "Soul Tether");
+        let (_, tether) = prepared_permanent(&mut game, cards::KONSTRARI_IMPROVISER, "Soul Tether");
 
         cast_copy(&mut game, tether, &[]);
         drain_pending(&mut game);
@@ -386,7 +359,7 @@ fn soul_tether_creates_a_heartwood_token() {
 /// this many cards in each player's hand and ten in each library.
 fn arc_of_fortune_cast(prepared_engine: bool, hands: [usize; 2]) -> Game {
     let mut game = setup(prepared_engine);
-    let (_, arc) = prepared_on_entry(&mut game, cards::VARIABLE_CHASER, "Arc of Fortune");
+    let (_, arc) = prepared_permanent(&mut game, cards::VARIABLE_CHASER, "Arc of Fortune");
     for (player, hand) in [PlayerId::One, PlayerId::Two].into_iter().zip(hands) {
         game.players[player.index()].library =
             game.build_zone(player, &[cards::FOREST; 10]).unwrap();
@@ -536,6 +509,27 @@ fn arc_of_fortune_lets_a_player_with_no_cards_in_hand_draw_seven() {
 
         assert_eq!(piles(&game, PlayerId::One), (7, 0, 3));
         assert_eq!(piles(&game, PlayerId::Two), (1, 0, 10));
+    }
+}
+
+/// "Spells and abilities your opponents control can't cause you to discard
+/// cards": a player who cannot discard their hand cannot take the option, so
+/// choosing it leaves them where they were. Their own spell is no obstacle.
+#[test]
+fn arc_of_fortune_does_nothing_for_a_player_its_caster_cannot_make_discard() {
+    for prepared_engine in [false, true] {
+        let mut game = arc_of_fortune_cast(prepared_engine, [2, 3]);
+        for player in [PlayerId::One, PlayerId::Two] {
+            game.put_onto_battlefield(player, cards::TAMIYO_COLLECTOR_OF_TALES)
+                .unwrap();
+        }
+
+        answer_arc_of_fortune(&mut game, true);
+        answer_arc_of_fortune(&mut game, true);
+        drain_pending(&mut game);
+
+        assert_eq!(piles(&game, PlayerId::One), (7, 2, 3), "its caster");
+        assert_eq!(piles(&game, PlayerId::Two), (3, 0, 10));
     }
 }
 

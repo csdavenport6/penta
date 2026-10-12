@@ -791,13 +791,13 @@ cast option per part through `CardComposition::alternate_spell`; do not write a
 combined `permanent // spell` name, which is also what a deck list uses. Unlike
 a double-faced card, the permanent's name alone is not a lookup alias.
 
-Either part may be `CardRules::unsupported()`. Declare a new preparation card
-with both names as soon as it is inventoried, even when neither part has rules:
-the prepare spell's name is only nameable (CR 722.5) once the second part
-exists. Until both parts are complete, leave both unsupported: an unsupported
-card exposes no executable clause, and the registry-integrity test rejects one
-with a castable part. Its audit comment names the gap in whichever part is
-missing.
+The constructor accepts `CardRules::unsupported()` for a part. Declare a new
+preparation card with both names as soon as it is inventoried, before it has
+rules: the prepare spell's name is only nameable (CR 722.5) once the second
+part exists. Until both parts are complete, leave both unsupported: an
+unsupported card exposes no executable clause, and the registry-integrity test
+rejects one with a castable part. Its audit comment names the gap in whichever
+part is missing.
 
 Give the prepare spell ordinary spell rules. When it is an existing card,
 reuse that record's rules as above. When one prepare spell is printed on

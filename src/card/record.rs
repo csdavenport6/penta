@@ -90,8 +90,8 @@ impl CardRecord {
     }
 
     /// Defines a preparation card (CR 722): the permanent first, then the
-    /// prepare spell printed in its inset frame. Either part may be
-    /// `CardRules::unsupported()`; both names exist either way.
+    /// prepare spell printed in its inset frame. Until both parts have rules,
+    /// both are `CardRules::unsupported()`; both names exist either way.
     pub(super) const fn new_prepare(
         name: &'static str,
         scryfall_id: &'static str,

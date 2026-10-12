@@ -194,9 +194,9 @@ const TREASURE_TOKEN: TokenCharacteristics = crate::card::tokens::treasure().wit
 );
 
 // Each prepare spell below is printed on three cards. One constant apiece
-// keeps the copies the same spell. A card that is still unsupported declares
-// neither part, since an unsupported card exposes no clause; it takes its
-// spell's constant when its creature gains rules.
+// keeps the copies the same spell. A card that is still unsupported gives
+// neither part rules, since an unsupported card exposes no clause; it takes
+// its spell's constant when its creature gains rules.
 
 /// The prepare spell of Blossom-Blessed Angel, Emergency Phytomedic, and
 /// Vigorbloom Vanguard.
@@ -1780,23 +1780,50 @@ const THE_ACTIVE_PLAYER: EffectRecipientDef =
 const THE_NONACTIVE_PLAYER: EffectRecipientDef =
     EffectRecipientDef::players(PlayerSetDef::Related(PlayerRelation::NonactivePlayer));
 
-/// What Arc of Fortune does for the players who chose it: their hands are
-/// discarded together, and then each of them draws.
-const fn arc_of_fortune_for(players: EffectRecipientDef) -> [EffectDef; 2] {
-    [
-        EffectDef::Discard {
-            recipient: players,
-            // `Discard` stops at the size of the hand, so the largest amount
-            // there is says "their hand".
-            amount: ValueDef::Constant(i32::MAX),
-            selection: DiscardSelectionDef::RecipientChooses,
-            then: None,
+/// "Discard their hand", for the players who chose to.
+const fn discard_hand(players: EffectRecipientDef) -> EffectDef {
+    EffectDef::Discard {
+        recipient: players,
+        // `Discard` stops at the size of the hand, so the largest amount
+        // there is says "their hand".
+        amount: ValueDef::Constant(i32::MAX),
+        selection: DiscardSelectionDef::RecipientChooses,
+        then: None,
+    }
+}
+
+/// "... and draw seven cards", for a player whose hand is gone. A player an
+/// opponent's spell cannot make discard (Tamiyo, Collector of Tales) cannot
+/// take the option at all; their hand is still there, so having taken it does
+/// nothing for them.
+const fn draw_seven_once_hand_is_gone<const ACTIVE: bool>() -> EffectDef {
+    EffectDef::IfCondition {
+        condition: &const {
+            TriggerConditionDef::ObjectCount {
+                query: ObjectQueryDef::matching(
+                    ObjectPredicateDef::Any,
+                    &[ZoneKind::Hand],
+                    if ACTIVE {
+                        PlayerRelation::ActivePlayer
+                    } else {
+                        PlayerRelation::NonactivePlayer
+                    },
+                ),
+                comparison: ComparisonDef::Equal,
+                amount: 0,
+            }
         },
-        EffectDef::DrawCards {
-            recipient: players,
-            amount: ValueDef::Constant(7),
+        then: &const {
+            EffectDef::DrawCards {
+                recipient: if ACTIVE {
+                    THE_ACTIVE_PLAYER
+                } else {
+                    THE_NONACTIVE_PLAYER
+                },
+                amount: ValueDef::Constant(7),
+            }
         },
-    ]
+    }
 }
 
 pub(in crate::card::sets) static VARIABLE_CHASER: CardRecord = CardRecord::new_prepare(
@@ -1833,15 +1860,18 @@ pub(in crate::card::sets) static VARIABLE_CHASER: CardRecord = CardRecord::new_p
                                 choices: &[
                                     EffectChoiceDef {
                                         label: "Discard your hand and draw seven cards too",
-                                        effect: EffectDef::Sequence(&arc_of_fortune_for(
-                                            EffectRecipientDef::EachPlayer,
-                                        )),
+                                        effect: EffectDef::Sequence(&[
+                                            discard_hand(EffectRecipientDef::EachPlayer),
+                                            draw_seven_once_hand_is_gone::<true>(),
+                                            draw_seven_once_hand_is_gone::<false>(),
+                                        ]),
                                     },
                                     EffectChoiceDef {
                                         label: "Keep your hand",
-                                        effect: EffectDef::Sequence(&arc_of_fortune_for(
-                                            THE_ACTIVE_PLAYER,
-                                        )),
+                                        effect: EffectDef::Sequence(&[
+                                            discard_hand(THE_ACTIVE_PLAYER),
+                                            draw_seven_once_hand_is_gone::<true>(),
+                                        ]),
                                     },
                                 ],
                             },
@@ -1853,9 +1883,10 @@ pub(in crate::card::sets) static VARIABLE_CHASER: CardRecord = CardRecord::new_p
                                 choices: &[
                                     EffectChoiceDef {
                                         label: "Discard your hand and draw seven cards",
-                                        effect: EffectDef::Sequence(&arc_of_fortune_for(
-                                            THE_NONACTIVE_PLAYER,
-                                        )),
+                                        effect: EffectDef::Sequence(&[
+                                            discard_hand(THE_NONACTIVE_PLAYER),
+                                            draw_seven_once_hand_is_gone::<false>(),
+                                        ]),
                                     },
                                     EffectChoiceDef {
                                         label: "Keep your hand too",
