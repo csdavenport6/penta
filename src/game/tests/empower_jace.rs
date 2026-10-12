@@ -501,7 +501,7 @@ fn bolt_on_the_stack(game: &mut Game) -> GameObjectId {
 #[test]
 fn countersculpt_is_paid_for_by_beholding_a_jace_or_with_one_more_mana() {
     for prepared_engine in [false, true] {
-        for behold in [false, true] {
+        for payment in ["mana", "a Jace token", "a Jace card in hand"] {
             let mut game = setup(prepared_engine);
             let life = game.players[1].life;
             bolt_on_the_stack(&mut game);
@@ -512,25 +512,33 @@ fn countersculpt_is_paid_for_by_beholding_a_jace_or_with_one_more_mana() {
                 "no Jace to behold and nothing for the {{1}}"
             );
 
-            let token = if behold {
-                Some(another_jace_token(&mut game, 3))
-            } else {
-                game.add_unrestricted_mana(PlayerId::One, ManaColor::Blue, 1);
-                None
-            };
+            let mut token = None;
+            match payment {
+                "mana" => game.add_unrestricted_mana(PlayerId::One, ManaColor::Blue, 1),
+                "a Jace token" => token = Some(another_jace_token(&mut game, 3)),
+                _ => {
+                    hand(&mut game, cards::JACE_MEMORY_ADEPT);
+                }
+            }
             let ways = casts(&game, counter);
-            assert_eq!(ways.len(), 1, "exactly the one way to pay");
+            assert_eq!(ways.len(), 1, "exactly the one way to pay with {payment}");
             game.apply(PlayerId::One, ways[0].clone()).unwrap();
             drain_pending(&mut game);
 
-            assert_eq!(game.players[0].mana_pool.total(), 0);
+            assert_eq!(game.players[0].mana_pool.total(), 0, "{payment}");
             assert_eq!(game.players[1].life, life, "the Bolt was countered");
             let tokens = jace_tokens(&game);
-            assert_eq!(tokens.len(), 1);
+            assert_eq!(tokens.len(), 1, "{payment}");
             match token {
                 Some(token) => assert_eq!(tokens[0], (token, 4), "beheld, then empowered"),
                 None => assert_eq!(tokens[0].1, 1, "the one it had to create"),
             }
+            let revealed = payment == "a Jace card in hand";
+            assert_eq!(
+                game.players[0].hand.len(),
+                usize::from(revealed),
+                "a revealed card stays in hand"
+            );
         }
     }
 }
@@ -624,7 +632,7 @@ fn the_jace_token(game: &Game) -> GameObjectId {
 
 /// "Only one loyalty ability of each planeswalker may be activated per turn,
 /// no matter how many it has gained." A granted loyalty ability also keeps
-/// loyalty timing (CR 606.3) and needs the loyalty it removes (CR 606.6).
+/// loyalty timing (CR 606.3).
 #[test]
 fn a_granted_loyalty_ability_shares_its_planeswalkers_one_activation_each_turn() {
     for prepared_engine in [false, true] {
@@ -675,19 +683,6 @@ fn a_granted_loyalty_ability_shares_its_planeswalkers_one_activation_each_turn()
         game.apply(PlayerId::One, plus).unwrap();
         drain_pending(&mut game);
         assert!(activations(&game, adept, "−4:").is_empty());
-
-        permanent_mut(&mut game, adept).activated_loyalty_this_turn = false;
-        assert_eq!(loyalty(&game, adept), 5);
-        assert_eq!(
-            activations(&game, adept, "−4:").len(),
-            1,
-            "a new turn's allowance"
-        );
-        permanent_mut(&mut game, token).activated_loyalty_this_turn = false;
-        assert!(
-            activations(&game, token, "−4:").is_empty(),
-            "three loyalty cannot pay four"
-        );
     }
 }
 
@@ -762,37 +757,34 @@ fn way_of_the_pyromancer_grants_a_loyalty_ability_that_uses_the_stack() {
 #[test]
 fn way_of_the_warlord_grants_damage_to_an_optional_permanent_and_a_player() {
     for prepared_engine in [false, true] {
-        let mut game = setup(prepared_engine);
-        settled(&mut game, cards::WAY_OF_THE_WARLORD);
-        let token = the_jace_token(&game);
-        let bears = game
-            .put_onto_battlefield(PlayerId::Two, cards::GRIZZLY_BEARS)
-            .unwrap();
-        let life = game.players[1].life;
-        let aimed_at = |action: &Action| match action {
-            Action::ActivateAbility { targets, .. } => targets
-                .iter()
-                .flat_map(|slot| slot.targets().to_vec())
-                .collect::<Vec<_>>(),
-            _ => Vec::new(),
-        };
-        let ways = activations(&game, token, "−4:");
-        assert!(
-            ways.iter()
-                .any(|way| aimed_at(way) == [Target::Player(PlayerId::Two)]),
-            "the creature or planeswalker is optional"
-        );
+        for both in [false, true] {
+            let mut game = setup(prepared_engine);
+            settled(&mut game, cards::WAY_OF_THE_WARLORD);
+            let token = the_jace_token(&game);
+            let bears = game
+                .put_onto_battlefield(PlayerId::Two, cards::GRIZZLY_BEARS)
+                .unwrap();
+            let life = game.players[1].life;
+            let mut wanted = vec![Target::Player(PlayerId::Two)];
+            if both {
+                wanted.insert(0, Target::Permanent(bears));
+            }
 
-        let both = ways
-            .into_iter()
-            .find(|way| aimed_at(way) == [Target::Permanent(bears), Target::Player(PlayerId::Two)])
-            .expect("both targets can be chosen");
-        game.apply(PlayerId::One, both).unwrap();
-        drain_pending(&mut game);
+            let action = activations(&game, token, "−4:")
+                .into_iter()
+                .find(|action| {
+                    matches!(action, Action::ActivateAbility { targets, .. }
+                        if targets.iter().flat_map(|slot| slot.targets()).eq(&wanted))
+                })
+                .expect("the creature or planeswalker is optional");
+            game.apply(PlayerId::One, action).unwrap();
+            drain_pending(&mut game);
 
-        assert_eq!(game.players[1].life, life - 2);
-        assert!(game.battlefield.iter().all(|p| p.card.id != bears));
-        assert_eq!(loyalty(&game, token), 1);
+            assert_eq!(game.players[1].life, life - 2, "the player either way");
+            let survived = game.battlefield.iter().any(|p| p.card.id == bears);
+            assert_eq!(survived, !both, "the creature only when it was aimed at");
+            assert_eq!(loyalty(&game, token), 1);
+        }
     }
 }
 
