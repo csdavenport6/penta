@@ -37,14 +37,14 @@ fn the_jace_token(game: &Game) -> GameObjectId {
     tokens[0].0
 }
 
-fn permanent(game: &Game, id: GameObjectId) -> &Permanent {
+pub(super) fn permanent(game: &Game, id: GameObjectId) -> &Permanent {
     game.battlefield
         .iter()
         .find(|permanent| permanent.card.id == id)
         .expect("the permanent is on the battlefield")
 }
 
-fn permanent_mut(game: &mut Game, id: GameObjectId) -> &mut Permanent {
+pub(super) fn permanent_mut(game: &mut Game, id: GameObjectId) -> &mut Permanent {
     game.battlefield
         .iter_mut()
         .find(|permanent| permanent.card.id == id)
@@ -70,7 +70,7 @@ fn another_jace_token(game: &mut Game, loyalty: u16) -> GameObjectId {
 }
 
 /// Gives player one a library deep enough to draw and surveil from.
-fn stock_library(game: &mut Game) {
+pub(super) fn stock_library(game: &mut Game) {
     game.players[0].library = game
         .build_zone(PlayerId::One, &[cards::FOREST; 10])
         .unwrap();
@@ -79,7 +79,7 @@ fn stock_library(game: &mut Game) {
 /// Puts a card with `definition` onto the battlefield under player one as
 /// though it had been there since an earlier turn, resolving whatever its
 /// arrival triggers.
-fn settled(game: &mut Game, definition: CardDefinitionId) -> GameObjectId {
+pub(super) fn settled(game: &mut Game, definition: CardDefinitionId) -> GameObjectId {
     let id = game
         .put_onto_battlefield(PlayerId::One, definition)
         .expect("cataloged");
@@ -90,7 +90,7 @@ fn settled(game: &mut Game, definition: CardDefinitionId) -> GameObjectId {
 
 /// Player one casts a card with `definition` from hand at `targets` with mana
 /// to spare, leaving it on the stack.
-fn cast(game: &mut Game, definition: CardDefinitionId, targets: &[Target]) {
+pub(super) fn cast(game: &mut Game, definition: CardDefinitionId, targets: &[Target]) {
     let card = hand(game, definition);
     for color in ManaColor::COLORS {
         game.add_unrestricted_mana(PlayerId::One, color, 6);
@@ -107,7 +107,7 @@ fn cast(game: &mut Game, definition: CardDefinitionId, targets: &[Target]) {
 }
 
 /// Player one's legal ways to cast `card`.
-fn casts(game: &Game, card: GameObjectId) -> Vec<Action> {
+pub(super) fn casts(game: &Game, card: GameObjectId) -> Vec<Action> {
     game.legal_actions(PlayerId::One)
         .into_iter()
         .filter(|action| matches!(action, Action::CastSpell { card: cast, .. } if *cast == card))
@@ -126,7 +126,7 @@ fn bolt_on_the_stack(game: &mut Game) -> GameObjectId {
 
 /// Player one's legal activations of `source`'s ability whose text starts
 /// with `prefix`, one per way of choosing its targets.
-fn activations(game: &Game, source: GameObjectId, prefix: &str) -> Vec<Action> {
+pub(super) fn activations(game: &Game, source: GameObjectId, prefix: &str) -> Vec<Action> {
     let permanent = permanent(game, source);
     game.legal_actions(PlayerId::One)
         .into_iter()
@@ -150,7 +150,7 @@ fn activations(game: &Game, source: GameObjectId, prefix: &str) -> Vec<Action> {
 
 /// Player one activates `source`'s ability whose text starts with `prefix`,
 /// leaving it on the stack.
-fn activate(game: &mut Game, source: GameObjectId, prefix: &str) {
+pub(super) fn activate(game: &mut Game, source: GameObjectId, prefix: &str) {
     let action = activations(game, source, prefix)
         .into_iter()
         .next()

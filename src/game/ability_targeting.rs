@@ -305,15 +305,18 @@ impl Game {
     }
 
     /// "Any other target": the ability's own source is dropped from what a
-    /// slot may name. Applied where candidates are offered and where a
-    /// declaration is checked, so the two agree.
+    /// slot may name, whether that source is a permanent or a card in another
+    /// zone. Applied where candidates are offered and where a declaration is
+    /// checked, so the two agree.
     pub(super) fn without_excluded_source(
         slot: &AbilityTargetDef,
         source: GameObjectId,
         mut targets: Vec<Target>,
     ) -> Vec<Target> {
         if slot.excludes_source {
-            targets.retain(|target| *target != Target::Permanent(source));
+            targets.retain(|target| {
+                !matches!(target, Target::Permanent(id) | Target::Card(id) if *id == source)
+            });
         }
         targets
     }

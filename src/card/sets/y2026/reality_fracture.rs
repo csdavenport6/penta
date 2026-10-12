@@ -11,13 +11,17 @@ use crate::Binding;
 use crate::ParentBinding;
 use crate::TargetIndex;
 use crate::card::AbilityDef;
+use crate::card::AbilityPredicateDef;
 use crate::card::AbilityTargetDef;
 use crate::card::AbilityTargetPredicate;
+use crate::card::ActivationTimingDef;
 use crate::card::AddManaEffectDef;
 use crate::card::AggregateOperationDef;
 use crate::card::AppliedEffectDef;
 use crate::card::AppliedRuleDef;
 use crate::card::AttackEventMatcherDef;
+use crate::card::BattlefieldArrivalDef;
+use crate::card::BattlefieldEntryModificationDef;
 use crate::card::CardArt;
 use crate::card::CardRules;
 use crate::card::CardSupertype;
@@ -26,10 +30,14 @@ use crate::card::CardTypeSet;
 use crate::card::ChoiceVisibilityDef;
 use crate::card::ChooseDef;
 use crate::card::ComparisonDef;
+use crate::card::CopyExceptionsDef;
 use crate::card::CostDef;
+use crate::card::CostQuantityDef;
 use crate::card::CounterKind;
 use crate::card::CreateTokenDef;
 use crate::card::DamageAssignmentDef;
+use crate::card::DiscardFollowUpDef;
+use crate::card::DiscardSelectionDef;
 use crate::card::EffectChoiceDef;
 use crate::card::EffectDef;
 use crate::card::EffectRecipientDef;
@@ -49,14 +57,21 @@ use crate::card::PlayerRefDef;
 use crate::card::PlayerRelation;
 use crate::card::PlayerRuleDef;
 use crate::card::PlayerSetDef;
+use crate::card::QuotientValueDef;
+use crate::card::ReplacementEffectDef;
 use crate::card::ResolvedEffectDurationDef;
+use crate::card::RoundingDef;
+use crate::card::ScaledValueDef;
 use crate::card::SpellCastQueryDef;
 use crate::card::SubtypeDef;
 use crate::card::SumValueDef;
 use crate::card::TokenCharacteristics;
+use crate::card::TokenCopyDef;
+use crate::card::TokenCountersDef;
 use crate::card::TokenDef;
 use crate::card::TriggerConditionDef;
 use crate::card::TriggerEventDef;
+use crate::card::TurnStepDef;
 use crate::card::ValueComparisonDef;
 use crate::card::ValueDef;
 use crate::card::ZoneKind;
@@ -71,6 +86,7 @@ use crate::card::sets::y2016::kaladesh as catalog_kld;
 use crate::card::sets::y2018::dominaria as catalog_dom;
 use crate::card::sets::y2021::innistrad_midnight_hunt as catalog_mid;
 use crate::card::sets::y2023::phyrexia_all_will_be_one as catalog_one;
+use crate::card::sets::y2026::secrets_of_strixhaven::become_unprepared;
 
 /// Printed set identity and stable catalog slug.
 pub const SET: crate::card::CardSet = crate::card::CardSet::new(&crate::card::CardSetMetadata {
@@ -130,6 +146,18 @@ const BEAST_TOKEN: TokenCharacteristics =
             "859bda9a-fa90-4ad3-b0c1-6fc62e27c12f",
             "Simon Dominic",
         ));
+
+/// "Creature or planeswalker", as a target or as a group to count over.
+const A_CREATURE_OR_PLANESWALKER: ObjectPredicateDef = ObjectPredicateDef::AnyOf(&[
+    ObjectPredicateDef::HasType(CardType::Creature),
+    ObjectPredicateDef::HasType(CardType::Planeswalker),
+]);
+
+/// What basic landcycling searches for.
+const A_BASIC_LAND_CARD: ObjectPredicateDef = ObjectPredicateDef::All(&[
+    ObjectPredicateDef::HasType(CardType::Land),
+    ObjectPredicateDef::Supertype(CardSupertype::Basic),
+]);
 
 /// Any Jace planeswalker token you control, however you came by it. A token
 /// copy of a nontoken Jace counts; the nontoken Jace does not.
@@ -283,57 +311,254 @@ pub(in crate::card::sets) static ENLIGHTENED_CONFIDANT: CardRecord = CardRecord:
 );
 
 // FRA 6 — Fateshaper Aspirant
-// Audit: unsupported — Card rules have not been implemented.
 pub(in crate::card::sets) static FATESHAPER_ASPIRANT: CardRecord = CardRecord::new(
     "Fateshaper Aspirant",
     "f0c8400d-824f-4d79-84bc-7615a0deb831",
     "Paul Dainton",
-    CardRules::unsupported(),
+    CardRules::new_creature(mana_cost!("{4}{W}"), &["Rhino", "Cleric"], 3, 4).with_ability(
+        AbilityDef::modal_triggered(
+            "When this creature enters, choose one —",
+            TriggerEventDef::zone_changed(
+                ObjectPredicateDef::Source,
+                None,
+                Some(ZoneKind::Battlefield),
+            ),
+            &[
+                AbilityDef::spell_with_targets(
+                    "Return target legendary card from your graveyard to your hand.",
+                    &[AbilityTargetDef::exactly_one(
+                        AbilityTargetPredicate::Object {
+                            object: ObjectPredicateDef::Supertype(CardSupertype::Legendary),
+                            zones: &[ZoneKind::Graveyard],
+                            controller: None,
+                            owner: Some(PlayerRelation::You),
+                        },
+                    )],
+                    EffectDef::move_to_zone(
+                        EffectRecipientDef::Target(TargetIndex::PRIMARY),
+                        ZoneKind::Hand,
+                        ZonePlacement::Top,
+                    ),
+                ),
+                AbilityDef::spell_with_targets(
+                    "Put a +1/+1 counter on target creature. It gains vigilance and \
+                     indestructible until end of turn. (Damage and effects that say \"destroy\" \
+                     don't destroy it.)",
+                    &[AbilityTargetDef::exactly_one_permanent(
+                        ObjectPredicateDef::HasType(CardType::Creature),
+                    )],
+                    EffectDef::Sequence(&[
+                        EffectDef::AddCounters {
+                            object: EffectRecipientDef::Target(TargetIndex::PRIMARY),
+                            kind: CounterKind::PlusOnePlusOne,
+                            amount: ValueDef::Constant(1),
+                        },
+                        EffectDef::Apply {
+                            recipient: EffectRecipientDef::Target(TargetIndex::PRIMARY),
+                            effect: AppliedEffectDef::Composite(&[
+                                AppliedEffectDef::add_ability(&abilities::vigilance()),
+                                AppliedEffectDef::add_ability(&abilities::indestructible()),
+                            ]),
+                            duration: ResolvedEffectDurationDef::UntilEndOfTurn,
+                        },
+                    ]),
+                ),
+            ],
+        ),
+    ),
 );
 
 // FRA 7 — Flickering Hound
-// Audit: unsupported — Card rules have not been implemented.
 pub(in crate::card::sets) static FLICKERING_HOUND: CardRecord = CardRecord::new(
     "Flickering Hound",
     "686f3a25-305d-4f02-8972-eba7b8e9635f",
     "Chris Rahn",
-    CardRules::unsupported(),
+    CardRules::new_creature(mana_cost!("{3}{W}"), &["Dog"], 2, 2).with_ability(
+        AbilityDef::triggered_with_targets(
+            "Whenever you cast a creature spell, exile up to one other target creature you \
+             control, then return that card to the battlefield under its owner's control.",
+            TriggerEventDef::spell_cast(ObjectPredicateDef::All(&[
+                ObjectPredicateDef::HasType(CardType::Creature),
+                ObjectPredicateDef::ControlledBy(PlayerRelation::You),
+            ])),
+            &[AbilityTargetDef::up_to(
+                AbilityTargetPredicate::Object {
+                    object: ObjectPredicateDef::HasType(CardType::Creature),
+                    zones: &[ZoneKind::Battlefield],
+                    controller: Some(PlayerRelation::You),
+                    owner: None,
+                },
+                1,
+            )
+            .excluding_source()],
+            // The exile is linked to the Hound so the return can name the card it made.
+            EffectDef::Sequence(&[
+                EffectDef::ExileLinkedToSource {
+                    object: EffectRecipientDef::Target(TargetIndex::PRIMARY),
+                    face_down: false,
+                    until_source_leaves: false,
+                    then: None,
+                },
+                EffectDef::ReturnLinkedExiles {
+                    object: ObjectPredicateDef::Any,
+                    zone: ZoneKind::Battlefield,
+                    grant: None,
+                    counters: None,
+                    transformed: false,
+                    controller: None,
+                },
+            ]),
+        ),
+    ),
 );
 
 // FRA 8 — Generous Revival
-// Audit: unsupported — Card rules have not been implemented.
 pub(in crate::card::sets) static GENEROUS_REVIVAL: CardRecord = CardRecord::new(
     "Generous Revival",
     "f82f181b-a43b-4cec-b8f6-f6c1dd4c64fd",
     "Alessandra Pisano",
-    CardRules::unsupported(),
+    CardRules::new_sorcery(mana_cost!("{2}{W}")).with_abilities(&[
+        AbilityDef::spell_with_targets(
+            "Return target creature card with mana value 3 or less from your graveyard to the \
+             battlefield with an additional +1/+1 counter on it.",
+            &[AbilityTargetDef::exactly_one(
+                AbilityTargetPredicate::Object {
+                    object: ObjectPredicateDef::All(&[
+                        ObjectPredicateDef::HasType(CardType::Creature),
+                        ObjectPredicateDef::ManaValueAtMost(3),
+                    ]),
+                    zones: &[ZoneKind::Graveyard],
+                    controller: None,
+                    owner: Some(PlayerRelation::You),
+                },
+            )],
+            EffectDef::WithBattlefieldArrival {
+                effect: &EffectDef::move_to_zone(
+                    EffectRecipientDef::Target(TargetIndex::PRIMARY),
+                    ZoneKind::Battlefield,
+                    ZonePlacement::Top,
+                ),
+                arrival: BattlefieldArrivalDef {
+                    counters: Some(TokenCountersDef {
+                        kind: CounterKind::PlusOnePlusOne,
+                        amount: ValueDef::Constant(1),
+                    }),
+                    ..BattlefieldArrivalDef::DEFAULT
+                },
+            },
+        ),
+        abilities::flashback(&[CostDef::Mana(mana_cost!("{4}{W}"))]),
+    ]),
 );
 
 // FRA 9 — Germinate Recruits
-// Audit: unsupported — Card rules have not been implemented.
 pub(in crate::card::sets) static GERMINATE_RECRUITS: CardRecord = CardRecord::new(
     "Germinate Recruits",
     "1b5d7d19-b32a-4786-ae9a-00da5e6658ad",
     "Rovina Cai",
-    CardRules::unsupported(),
+    CardRules::new_instant(mana_cost!("{2}{W}")).with_ability(AbilityDef::spell(
+        "Create X 2/2 colorless Wizard Soldier creature tokens named Cadet, where X is the \
+         amount of life you gained this turn.",
+        EffectDef::CreateToken(
+            CreateTokenDef::new(TokenDef::Literal(CADET_TOKEN))
+                .with_count(ValueDef::LifeGainedThisTurn(PlayerRelation::You)),
+        ),
+    )),
 );
 
 // FRA 10 — Graft Surgeon
-// Audit: unsupported — Card rules have not been implemented.
 pub(in crate::card::sets) static GRAFT_SURGEON: CardRecord = CardRecord::new(
     "Graft Surgeon",
     "32a7a905-11bf-4b66-a28e-1066a0e372b8",
     "Bram Sels",
-    CardRules::unsupported(),
+    CardRules::new_creature(mana_cost!("{2}{W}"), &["Human", "Cleric"], 2, 2).with_abilities(&[
+        AbilityDef::as_enters(
+            "This creature enters with a +1/+1 counter on it.",
+            ReplacementEffectDef::ModifyBattlefieldEntry(
+                BattlefieldEntryModificationDef::AddCounters {
+                    kind: CounterKind::PlusOnePlusOne,
+                    amount: 1,
+                },
+            ),
+        ),
+        abilities::dies_trigger_with_targets(
+            "When this creature dies, put its counters on up to one target creature you \
+             control.",
+            &[AbilityTargetDef::up_to(
+                AbilityTargetPredicate::Object {
+                    object: ObjectPredicateDef::HasType(CardType::Creature),
+                    zones: &[ZoneKind::Battlefield],
+                    controller: Some(PlayerRelation::You),
+                    owner: None,
+                },
+                1,
+            )],
+            EffectDef::AddCountersFrom {
+                from: ObjectRefDef::Source,
+                object: EffectRecipientDef::Target(TargetIndex::PRIMARY),
+            },
+        ),
+    ]),
 );
 
 // FRA 11 — Guiding Hydra
-// Audit: unsupported — Card rules have not been implemented.
 pub(in crate::card::sets) static GUIDING_HYDRA: CardRecord = CardRecord::new(
     "Guiding Hydra",
     "a53eb840-039d-4c45-b701-d58cb26b1a6c",
     "Jason Mowry",
-    CardRules::unsupported(),
+    CardRules::new_creature(mana_cost!("{X}{W}"), &["Hydra", "Horror"], 1, 0).with_abilities(&[
+        AbilityDef::as_enters(
+            "This creature enters with X +1/+1 counters on it.",
+            ReplacementEffectDef::ModifyBattlefieldEntry(
+                BattlefieldEntryModificationDef::AddCastXCounters {
+                    kind: CounterKind::PlusOnePlusOne,
+                },
+            ),
+        ),
+        AbilityDef::triggered(
+            "At the beginning of combat on your turn, you may remove a +1/+1 counter from this \
+             creature. If you do, put a +1/+1 counter on each other creature you control.",
+            TriggerEventDef::StepBegins {
+                step: TurnStepDef::BeginningOfCombat,
+                player: PlayerRelation::You,
+            },
+            // Not a `PayOrDef`: a resolving payment cannot take a counter off its own
+            // source without requiring that you still control it. Offered only while the
+            // Hydra is there with a counter to give up, so taking the offer is "if you do".
+            EffectDef::IfCondition {
+                condition: &TriggerConditionDef::All(&[
+                    TriggerConditionDef::SourceOnBattlefield,
+                    TriggerConditionDef::SourceCounters {
+                        kind: CounterKind::PlusOnePlusOne,
+                        comparison: ComparisonDef::GreaterOrEqual,
+                        amount: 1,
+                    },
+                ]),
+                then: &EffectDef::May {
+                    player: EffectRecipientDef::Controller,
+                    effect: &EffectDef::Sequence(&[
+                        EffectDef::RemoveCounters {
+                            object: EffectRecipientDef::Source,
+                            kind: CounterKind::PlusOnePlusOne,
+                            amount: ValueDef::Constant(1),
+                        },
+                        EffectDef::AddCounters {
+                            object: EffectRecipientDef::matching_objects(
+                                ObjectPredicateDef::All(&[
+                                    ObjectPredicateDef::HasType(CardType::Creature),
+                                    ObjectPredicateDef::Not(&ObjectPredicateDef::Source),
+                                ]),
+                                &[ZoneKind::Battlefield],
+                                PlayerRelation::You,
+                            ),
+                            kind: CounterKind::PlusOnePlusOne,
+                            amount: ValueDef::Constant(1),
+                        },
+                    ]),
+                },
+            },
+        ),
+    ]),
 );
 
 // FRA 12 — Hexhaven Battalion
@@ -358,10 +583,7 @@ pub(in crate::card::sets) static HEXHAVEN_BATTALION: CardRecord = CardRecord::ne
             "Basic landcycling {2} ({2}, Discard this card: Search your library for a basic \
              land card, reveal it, put it into your hand, then shuffle.)",
             &[CostDef::Mana(mana_cost!("{2}"))],
-            ObjectPredicateDef::All(&[
-                ObjectPredicateDef::HasType(CardType::Land),
-                ObjectPredicateDef::Supertype(CardSupertype::Basic),
-            ]),
+            A_BASIC_LAND_CARD,
         ),
     ]),
 );
@@ -377,48 +599,144 @@ pub(in crate::card::sets) static KINDRED_JUDGMENT: CardRecord = CardRecord::new(
 );
 
 // FRA 14 — Loyal Tutor
-// Audit: unsupported — Card rules have not been implemented.
 pub(in crate::card::sets) static LOYAL_TUTOR: CardRecord = CardRecord::new(
     "Loyal Tutor",
     "490dae91-94ce-42a9-a11f-6c5e77c4e486",
     "Darren Tan",
-    CardRules::unsupported(),
+    CardRules::new_instant(mana_cost!("{W}")).with_ability(AbilityDef::spell(
+        "Search your library for a planeswalker card, reveal it, then shuffle and put that card \
+         on top.",
+        EffectDef::SearchZone {
+            exile_face_down: false,
+            player: EffectRecipientDef::Controller,
+            source: ZoneKind::Library,
+            object: ObjectPredicateDef::HasType(CardType::Planeswalker),
+            minimum: 0,
+            maximum: ValueDef::Constant(1),
+            reveal: true,
+            destination: ZoneKind::Library,
+            placement: ZonePlacement::Top,
+            shuffle: true,
+            enters_tapped: false,
+            attachment: None,
+            binding: None,
+            then: None,
+        },
+    )),
 );
 
 // FRA 15 — Memory Trap
-// Audit: unsupported — Card rules have not been implemented.
 pub(in crate::card::sets) static MEMORY_TRAP: CardRecord = CardRecord::new(
     "Memory Trap",
     "2f5345ae-4489-4d05-b2d5-c71285254f05",
     "Ekaterina Burmak",
-    CardRules::unsupported(),
+    CardRules::new_enchantment(mana_cost!("{2}{W}")).with_ability(
+        abilities::enters_trigger_with_targets(
+            "When this enchantment enters, exile target nonland permanent an opponent controls \
+             until this enchantment leaves the battlefield.",
+            &[AbilityTargetDef::exactly_one(
+                AbilityTargetPredicate::Object {
+                    object: ObjectPredicateDef::Not(&ObjectPredicateDef::HasType(CardType::Land)),
+                    zones: &[ZoneKind::Battlefield],
+                    controller: Some(PlayerRelation::Opponent),
+                    owner: None,
+                },
+            )],
+            EffectDef::ExileLinkedToSource {
+                object: EffectRecipientDef::Target(TargetIndex::PRIMARY),
+                face_down: false,
+                until_source_leaves: true,
+                then: None,
+            },
+        ),
+    ),
 );
 
 // FRA 16 — Predictive Preparations
-// Audit: unsupported — Card rules have not been implemented.
 pub(in crate::card::sets) static PREDICTIVE_PREPARATIONS: CardRecord = CardRecord::new(
     "Predictive Preparations",
     "50a0e5f0-3c39-4f16-9a73-eec8ef71f12e",
     "Nathaniel Himawan",
-    CardRules::unsupported(),
+    CardRules::new_sorcery(mana_cost!("{1}{W}")).with_abilities(&[
+        AbilityDef::spell_with_targets(
+            "Put a +1/+1 counter on each of one or two target creatures.",
+            &[AbilityTargetDef {
+                minimum: 1,
+                ..AbilityTargetDef::up_to(
+                    AbilityTargetPredicate::Object {
+                        object: ObjectPredicateDef::HasType(CardType::Creature),
+                        zones: &[ZoneKind::Battlefield],
+                        controller: None,
+                        owner: None,
+                    },
+                    2,
+                )
+            }],
+            EffectDef::AddCounters {
+                object: EffectRecipientDef::Target(TargetIndex::PRIMARY),
+                kind: CounterKind::PlusOnePlusOne,
+                amount: ValueDef::Constant(1),
+            },
+        ),
+        abilities::flashback(&[CostDef::Mana(mana_cost!("{3}{W}"))]),
+    ]),
 );
 
 // FRA 17 — Prophesied End
-// Audit: unsupported — Card rules have not been implemented.
 pub(in crate::card::sets) static PROPHESIED_END: CardRecord = CardRecord::new(
     "Prophesied End",
     "1f95399a-9766-4f3d-aa6a-ece55e0530d9",
     "A. M. Sartor",
-    CardRules::unsupported(),
+    CardRules::new_instant(mana_cost!("{1}{W}")).with_ability(AbilityDef::spell_with_targets(
+        "Destroy target creature. If it wasn't attacking, its controller draws a card.",
+        &[AbilityTargetDef::exactly_one_permanent(
+            ObjectPredicateDef::HasType(CardType::Creature),
+        )],
+        // Whether it was attacking is read while it is still there to ask; the draw is
+        // owed whether or not the destruction then happens.
+        EffectDef::IfElseCondition {
+            condition: &TriggerConditionDef::TargetMatches {
+                slot: TargetIndex::PRIMARY,
+                object: ObjectPredicateDef::Attacking,
+            },
+            then: &EffectDef::destroy_target(TargetIndex::PRIMARY),
+            otherwise: &EffectDef::Sequence(&[
+                EffectDef::destroy_target(TargetIndex::PRIMARY),
+                EffectDef::DrawCards {
+                    recipient: EffectRecipientDef::ControllerOfTarget(TargetIndex::PRIMARY),
+                    amount: ValueDef::Constant(1),
+                },
+            ]),
+        },
+    )),
 );
 
 // FRA 18 — Refute Destiny
-// Audit: unsupported — Card rules have not been implemented.
 pub(in crate::card::sets) static REFUTE_DESTINY: CardRecord = CardRecord::new(
     "Refute Destiny",
     "2c588954-c6eb-4aae-a2fa-0651ccf2d90a",
     "Billy Christian",
-    CardRules::unsupported(),
+    CardRules::new_sorcery(mana_cost!("{1}{W}")).with_ability(AbilityDef::spell_with_targets(
+        "Exile target creature or planeswalker that's green or blue. Surveil 1. (Look at the \
+         top card of your library. You may put it into your graveyard.)",
+        &[AbilityTargetDef::exactly_one_permanent(
+            ObjectPredicateDef::All(&[
+                A_CREATURE_OR_PLANESWALKER,
+                ObjectPredicateDef::AnyOf(&[
+                    ObjectPredicateDef::Color(ManaColor::Green),
+                    ObjectPredicateDef::Color(ManaColor::Blue),
+                ]),
+            ]),
+        )],
+        EffectDef::Sequence(&[
+            EffectDef::move_to_zone(
+                EffectRecipientDef::Target(TargetIndex::PRIMARY),
+                ZoneKind::Exile,
+                ZonePlacement::Top,
+            ),
+            abilities::surveil(ValueDef::Constant(1)),
+        ]),
+    )),
 );
 
 // FRA 19 — Repurposed Enforcer
@@ -445,7 +763,10 @@ pub(in crate::card::sets) static REPURPOSED_ENFORCER: CardRecord = CardRecord::n
 );
 
 // FRA 20 — Return to the Light Realms
-// Audit: unsupported — Card rules have not been implemented.
+// Audit: unsupported — Needs the CR 303.4f host choice for an Aura card put onto the battlefield
+// without being cast. A plain zone move brings the Aura in unattached, so state-based actions
+// put it into the graveyard instead of it entering attached to a legal permanent or player, or
+// staying in the graveyard when there is none (CR 303.4g).
 pub(in crate::card::sets) static RETURN_TO_THE_LIGHT_REALMS: CardRecord = CardRecord::new(
     "Return to the Light Realms",
     "9e72f397-2384-40f1-882b-f627664d97df",
@@ -454,39 +775,111 @@ pub(in crate::card::sets) static RETURN_TO_THE_LIGHT_REALMS: CardRecord = CardRe
 );
 
 // FRA 21 — Shatterwing Pegasus
-// Audit: unsupported — Card rules have not been implemented.
 pub(in crate::card::sets) static SHATTERWING_PEGASUS: CardRecord = CardRecord::new(
     "Shatterwing Pegasus",
     "e29095de-59ec-4562-ba8e-73f952e457ae",
     "Antonio José Manzanedo",
-    CardRules::unsupported(),
+    CardRules::new_creature(mana_cost!("{2}{W}"), &["Pegasus"], 2, 3).with_abilities(&[
+        abilities::flying(),
+        AbilityDef::activated(
+            "{4}{W}: Creatures you control get +1/+1 until end of turn.",
+            &[CostDef::Mana(mana_cost!("{4}{W}"))],
+            EffectDef::Apply {
+                recipient: EffectRecipientDef::matching_objects(
+                    ObjectPredicateDef::HasType(CardType::Creature),
+                    &[ZoneKind::Battlefield],
+                    PlayerRelation::You,
+                ),
+                effect: AppliedEffectDef::modify_power_toughness(
+                    ValueDef::Constant(1),
+                    ValueDef::Constant(1),
+                ),
+                duration: ResolvedEffectDurationDef::UntilEndOfTurn,
+            },
+        ),
+    ]),
 );
 
 // FRA 22 — Surgical Precision
-// Audit: unsupported — Card rules have not been implemented.
 pub(in crate::card::sets) static SURGICAL_PRECISION: CardRecord = CardRecord::new(
     "Surgical Precision",
     "d3acf176-ef02-4729-88c4-0f0dfbfdada4",
     "Nathaniel Himawan",
-    CardRules::unsupported(),
+    CardRules::new_sorcery(mana_cost!("{1}{W}")).with_ability(AbilityDef::modal_spell(
+        "Choose one —",
+        &[
+            AbilityDef::spell_with_targets(
+                "Destroy target creature with toughness 4 or greater. You gain 1 life.",
+                &[AbilityTargetDef::exactly_one_permanent(
+                    ObjectPredicateDef::All(&[
+                        ObjectPredicateDef::HasType(CardType::Creature),
+                        ObjectPredicateDef::ToughnessGreaterThan(ValueDef::Constant(3)),
+                    ]),
+                )],
+                EffectDef::Sequence(&[
+                    EffectDef::destroy_target(TargetIndex::PRIMARY),
+                    EffectDef::GainLife {
+                        recipient: EffectRecipientDef::Controller,
+                        amount: ValueDef::Constant(1),
+                    },
+                ]),
+            ),
+            AbilityDef::spell(
+                "You draw a card and gain 2 life.",
+                EffectDef::Sequence(&[
+                    abilities::draw_cards(ValueDef::Constant(1)),
+                    EffectDef::GainLife {
+                        recipient: EffectRecipientDef::Controller,
+                        amount: ValueDef::Constant(2),
+                    },
+                ]),
+            ),
+        ],
+    )),
 );
 
 // FRA 23 — Unflinching Hortimancer
-// Audit: unsupported — Card rules have not been implemented.
 pub(in crate::card::sets) static UNFLINCHING_HORTIMANCER: CardRecord = CardRecord::new(
     "Unflinching Hortimancer",
     "63f82985-c9c2-4d0a-ac4f-560166bebd9f",
     "Manuel Castañón",
-    CardRules::unsupported(),
+    CardRules::new_creature(mana_cost!("{1}{W}"), &["Human", "Cleric"], 2, 1).with_abilities(&[
+        abilities::ward(
+            &[CostDef::Mana(mana_cost!("{1}"))],
+            "Ward {1} (Whenever this creature becomes the target of a spell or ability an \
+             opponent controls, counter it unless that player pays {1}.)",
+        ),
+        AbilityDef::triggered(
+            "Whenever you gain life, put a +1/+1 counter on this creature.",
+            TriggerEventDef::LifeGained(PlayerRelation::You),
+            EffectDef::AddCounters {
+                object: EffectRecipientDef::Source,
+                kind: CounterKind::PlusOnePlusOne,
+                amount: ValueDef::Constant(1),
+            },
+        ),
+    ]),
 );
 
 // FRA 24 — Your Fate Ends Here
-// Audit: unsupported — Card rules have not been implemented.
 pub(in crate::card::sets) static YOUR_FATE_ENDS_HERE: CardRecord = CardRecord::new(
     "Your Fate Ends Here",
     "25000a17-b701-4d69-b2ef-2c74029199d3",
     "Andrew Mar",
-    CardRules::unsupported(),
+    CardRules::new_instant(mana_cost!("{2}{W}")).with_ability(AbilityDef::spell_with_targets(
+        "Destroy target creature or planeswalker with mana value 3 or greater. Surveil 1. \
+         (Look at the top card of your library. You may put it into your graveyard.)",
+        &[AbilityTargetDef::exactly_one_permanent(
+            ObjectPredicateDef::All(&[
+                A_CREATURE_OR_PLANESWALKER,
+                ObjectPredicateDef::Not(&ObjectPredicateDef::ManaValueAtMost(2)),
+            ]),
+        )],
+        EffectDef::Sequence(&[
+            EffectDef::destroy_target(TargetIndex::PRIMARY),
+            abilities::surveil(ValueDef::Constant(1)),
+        ]),
+    )),
 );
 
 // FRA 25 — Countersculpt
@@ -540,39 +933,165 @@ pub(in crate::card::sets) static CRUEL_CALCULATIONS: CardRecord = CardRecord::ne
 );
 
 // FRA 27 — Cryotheory Adept
-// Audit: unsupported — Card rules have not been implemented.
 pub(in crate::card::sets) static CRYOTHEORY_ADEPT: CardRecord = CardRecord::new(
     "Cryotheory Adept",
     "9ba1f7ce-3404-4932-9795-22967707f762",
     "Kai Carpenter",
-    CardRules::unsupported(),
+    CardRules::new_creature(mana_cost!("{1}{U}"), &["Human", "Wizard"], 2, 1).with_abilities(&[
+        abilities::prowess(),
+        AbilityDef::activated_with_targets(
+            "{3}{U}, Exile this card from your graveyard: Tap target creature and put a stun \
+             counter on it. Activate only as a sorcery. (If a permanent with a stun counter \
+             would become untapped, remove one from it instead.)",
+            &[CostDef::Mana(mana_cost!("{3}{U}")), CostDef::ExileSource],
+            &[AbilityTargetDef::exactly_one_permanent(
+                ObjectPredicateDef::HasType(CardType::Creature),
+            )],
+            EffectDef::Sequence(&[
+                EffectDef::Tap {
+                    object: EffectRecipientDef::Target(TargetIndex::PRIMARY),
+                },
+                EffectDef::AddCounters {
+                    object: EffectRecipientDef::Target(TargetIndex::PRIMARY),
+                    kind: CounterKind::Stun,
+                    amount: ValueDef::Constant(1),
+                },
+            ]),
+        )
+        .with_source_zones(&[ZoneKind::Graveyard])
+        .with_activation_timing(ActivationTimingDef::SorcerySpeed),
+    ]),
 );
 
 // FRA 29 — Divining Duelist
-// Audit: unsupported — Card rules have not been implemented.
 pub(in crate::card::sets) static DIVINING_DUELIST: CardRecord = CardRecord::new(
     "Divining Duelist",
     "960c7335-331d-488b-be68-2ad1c1c695dc",
     "David Auden Nash",
-    CardRules::unsupported(),
+    CardRules::new_creature(mana_cost!("{2}{U}"), &["Merfolk", "Wizard"], 3, 2).with_abilities(&[
+        abilities::flash(),
+        AbilityDef::modal_triggered(
+            "When this creature enters, choose one —",
+            TriggerEventDef::zone_changed(
+                ObjectPredicateDef::Source,
+                None,
+                Some(ZoneKind::Battlefield),
+            ),
+            &[
+                AbilityDef::spell_with_targets(
+                    "Tap target creature.",
+                    &[AbilityTargetDef::exactly_one_permanent(
+                        ObjectPredicateDef::HasType(CardType::Creature),
+                    )],
+                    EffectDef::Tap {
+                        object: EffectRecipientDef::Target(TargetIndex::PRIMARY),
+                    },
+                ),
+                AbilityDef::spell_with_targets(
+                    "Untap target creature.",
+                    &[AbilityTargetDef::exactly_one_permanent(
+                        ObjectPredicateDef::HasType(CardType::Creature),
+                    )],
+                    EffectDef::Untap {
+                        object: EffectRecipientDef::Target(TargetIndex::PRIMARY),
+                    },
+                ),
+                AbilityDef::spell(
+                    "Draw a card, then discard a card.",
+                    EffectDef::Sequence(&[
+                        abilities::draw_cards(ValueDef::Constant(1)),
+                        EffectDef::Discard {
+                            recipient: EffectRecipientDef::Controller,
+                            amount: ValueDef::Constant(1),
+                            selection: DiscardSelectionDef::RecipientChooses,
+                            then: None,
+                        },
+                    ]),
+                ),
+            ],
+        ),
+    ]),
 );
 
 // FRA 30 — Icy Reception
-// Audit: unsupported — Card rules have not been implemented.
 pub(in crate::card::sets) static ICY_RECEPTION: CardRecord = CardRecord::new(
     "Icy Reception",
     "8d754b96-5e44-45af-9c7a-b0da59fbe4c3",
     "Borja Pindado",
-    CardRules::unsupported(),
+    CardRules::new_instant(mana_cost!("{1}{U}")).with_ability(AbilityDef::modal_spell(
+        "Choose one —",
+        &[
+            AbilityDef::spell_with_targets(
+                "Counter target creature or legendary spell unless its controller pays {3}.",
+                &[AbilityTargetDef::exactly_one(
+                    AbilityTargetPredicate::Object {
+                        object: ObjectPredicateDef::All(&[
+                            ObjectPredicateDef::Spell,
+                            ObjectPredicateDef::AnyOf(&[
+                                ObjectPredicateDef::HasType(CardType::Creature),
+                                ObjectPredicateDef::Supertype(CardSupertype::Legendary),
+                            ]),
+                        ]),
+                        zones: &[ZoneKind::Stack],
+                        controller: None,
+                        owner: None,
+                    },
+                )],
+                abilities::counter_target_unless_paid(&[CostDef::Mana(mana_cost!("{3}"))]),
+            ),
+            AbilityDef::spell_with_targets(
+                "Target creature gets -5/-0 until end of turn.",
+                &[AbilityTargetDef::exactly_one_permanent(
+                    ObjectPredicateDef::HasType(CardType::Creature),
+                )],
+                EffectDef::Apply {
+                    recipient: EffectRecipientDef::Target(TargetIndex::PRIMARY),
+                    effect: AppliedEffectDef::modify_power_toughness(
+                        ValueDef::Constant(-5),
+                        ValueDef::Constant(0),
+                    ),
+                    duration: ResolvedEffectDurationDef::UntilEndOfTurn,
+                },
+            ),
+        ],
+    )),
 );
 
 // FRA 31 — Infinite Coursework
-// Audit: unsupported — Card rules have not been implemented.
 pub(in crate::card::sets) static INFINITE_COURSEWORK: CardRecord = CardRecord::new(
     "Infinite Coursework",
     "a5988272-faaa-463d-a0a1-a8e96b946bad",
     "Randy Vargas",
-    CardRules::unsupported(),
+    CardRules::new_enchantment(mana_cost!("{2}{U}"))
+        .with_subtypes(&["Aura"])
+        .with_abilities(&[
+            abilities::aura_spell(
+                "Enchant creature",
+                &[AbilityTargetDef::exactly_one_permanent(
+                    ObjectPredicateDef::HasType(CardType::Creature),
+                )],
+            ),
+            abilities::enters_trigger(
+                "When this Aura enters, tap enchanted creature. It becomes unprepared.",
+                EffectDef::Sequence(&[
+                    EffectDef::Tap {
+                        object: EffectRecipientDef::AttachedPermanent,
+                    },
+                    become_unprepared(EffectRecipientDef::AttachedPermanent),
+                ]),
+            ),
+            AbilityDef::static_ability(
+                "Enchanted creature loses all abilities and doesn't untap during its \
+                 controller's untap step.",
+                EffectDef::StaticApply {
+                    recipient: EffectRecipientDef::AttachedPermanent,
+                    effect: AppliedEffectDef::Composite(&[
+                        AppliedEffectDef::remove_abilities(AbilityPredicateDef::Any),
+                        AppliedEffectDef::Rule(AppliedRuleDef::DoesNotUntapDuringUntapStep),
+                    ]),
+                },
+            ),
+        ]),
 );
 
 // FRA 32 — Jace's Machinations
@@ -602,12 +1121,43 @@ pub(in crate::card::sets) static MINDSEEKER_OCULUS: CardRecord = CardRecord::new
 );
 
 // FRA 34 — Perfected Theory
-// Audit: unsupported — Card rules have not been implemented.
 pub(in crate::card::sets) static PERFECTED_THEORY: CardRecord = CardRecord::new(
     "Perfected Theory",
     "d0ecae06-bc5a-4886-84df-c2900816f226",
     "Marta Nael",
-    CardRules::unsupported(),
+    CardRules::new_instant(mana_cost!("{U}")).with_ability(AbilityDef::modal_spell(
+        "Choose one —",
+        &[
+            AbilityDef::spell_with_targets(
+                "Target creature has base power and toughness 1/1 until end of turn.",
+                &[AbilityTargetDef::exactly_one_permanent(
+                    ObjectPredicateDef::HasType(CardType::Creature),
+                )],
+                EffectDef::Apply {
+                    recipient: EffectRecipientDef::Target(TargetIndex::PRIMARY),
+                    effect: AppliedEffectDef::set_base_power_toughness(
+                        ValueDef::Constant(1),
+                        ValueDef::Constant(1),
+                    ),
+                    duration: ResolvedEffectDurationDef::UntilEndOfTurn,
+                },
+            ),
+            AbilityDef::spell_with_targets(
+                "Target creature has base power and toughness 4/5 until end of turn.",
+                &[AbilityTargetDef::exactly_one_permanent(
+                    ObjectPredicateDef::HasType(CardType::Creature),
+                )],
+                EffectDef::Apply {
+                    recipient: EffectRecipientDef::Target(TargetIndex::PRIMARY),
+                    effect: AppliedEffectDef::set_base_power_toughness(
+                        ValueDef::Constant(4),
+                        ValueDef::Constant(5),
+                    ),
+                    duration: ResolvedEffectDurationDef::UntilEndOfTurn,
+                },
+            ),
+        ],
+    )),
 );
 
 // FRA 35 — Plan for All Outcomes
@@ -680,12 +1230,28 @@ pub(in crate::card::sets) static PLAN_FOR_ALL_OUTCOMES: CardRecord = CardRecord:
 );
 
 // FRA 36 — Precise Redaction
-// Audit: unsupported — Card rules have not been implemented.
 pub(in crate::card::sets) static PRECISE_REDACTION: CardRecord = CardRecord::new(
     "Precise Redaction",
     "9244efad-35ab-45c0-b173-4bc68276cb67",
     "Mathias Kollros",
-    CardRules::unsupported(),
+    CardRules::new_instant(mana_cost!("{1}{U}")).with_ability(AbilityDef::spell_with_targets(
+        "Counter target white or black spell.",
+        &[AbilityTargetDef::exactly_one(
+            AbilityTargetPredicate::Object {
+                object: ObjectPredicateDef::All(&[
+                    ObjectPredicateDef::Spell,
+                    ObjectPredicateDef::AnyOf(&[
+                        ObjectPredicateDef::Color(ManaColor::White),
+                        ObjectPredicateDef::Color(ManaColor::Black),
+                    ]),
+                ]),
+                zones: &[ZoneKind::Stack],
+                controller: None,
+                owner: None,
+            },
+        )],
+        EffectDef::counter_target(TargetIndex::PRIMARY),
+    )),
 );
 
 // FRA 37 — Protege's Awakening
@@ -711,21 +1277,133 @@ pub(in crate::card::sets) static PROTEGE_S_AWAKENING: CardRecord = CardRecord::n
 );
 
 // FRA 38 — Seasoned Cryomancer
-// Audit: unsupported — Card rules have not been implemented.
+// A target count cannot read how many nonland cards the discard turned up, but two cards are
+// discarded, so that number is one or two and each gets the same trigger with its own limit.
+const fn seasoned_cryomancer_freeze<const CREATURES: u8>() -> AbilityDef {
+    AbilityDef::triggered_with_targets(
+        "When you discard one or more nonland cards this way, tap up to that many target \
+         creatures and put a stun counter on each of them.",
+        TriggerEventDef::Reflexive,
+        &const {
+            [AbilityTargetDef::up_to(
+                AbilityTargetPredicate::Object {
+                    object: ObjectPredicateDef::HasType(CardType::Creature),
+                    zones: &[ZoneKind::Battlefield],
+                    controller: None,
+                    owner: None,
+                },
+                CREATURES,
+            )]
+        },
+        EffectDef::Sequence(
+            &const {
+                [
+                    EffectDef::Tap {
+                        object: EffectRecipientDef::Target(TargetIndex::PRIMARY),
+                    },
+                    EffectDef::AddCounters {
+                        object: EffectRecipientDef::Target(TargetIndex::PRIMARY),
+                        kind: CounterKind::Stun,
+                        amount: ValueDef::Constant(1),
+                    },
+                ]
+            },
+        ),
+    )
+}
 pub(in crate::card::sets) static SEASONED_CRYOMANCER: CardRecord = CardRecord::new(
     "Seasoned Cryomancer",
     "51d86875-420d-4e82-b69c-4feeb99c9428",
     "Andrea Piparo",
-    CardRules::unsupported(),
+    CardRules::new_creature(mana_cost!("{1}{U}{U}"), &["Human", "Wizard"], 2, 2).with_abilities(&[
+        abilities::enters_trigger(
+            "When this creature enters, draw two cards, then discard two cards. When you \
+             discard one or more nonland cards this way, tap up to that many target creatures \
+             and put a stun counter on each of them.",
+            EffectDef::Sequence(&[
+                abilities::draw_cards(ValueDef::Constant(2)),
+                EffectDef::Discard {
+                    recipient: EffectRecipientDef::Controller,
+                    amount: ValueDef::Constant(2),
+                    selection: DiscardSelectionDef::RecipientChooses,
+                    then: Some(DiscardFollowUpDef {
+                        counted: ObjectPredicateDef::Not(&ObjectPredicateDef::HasType(
+                            CardType::Land,
+                        )),
+                        bound: Some(Binding!("discarded")),
+                        effect: &EffectDef::IfElseCondition {
+                            condition: &TriggerConditionDef::ValueComparison(&ValueComparisonDef {
+                                left: ValueDef::BoundObjectCount(Binding!("discarded")),
+                                comparison: ComparisonDef::GreaterOrEqual,
+                                right: ValueDef::Constant(2),
+                            }),
+                            then: &EffectDef::ReflexiveTrigger(&seasoned_cryomancer_freeze::<2>()),
+                            otherwise: &EffectDef::IfCondition {
+                                condition: &TriggerConditionDef::ValueComparison(
+                                    &ValueComparisonDef {
+                                        left: ValueDef::BoundObjectCount(Binding!("discarded")),
+                                        comparison: ComparisonDef::GreaterOrEqual,
+                                        right: ValueDef::Constant(1),
+                                    },
+                                ),
+                                then: &EffectDef::ReflexiveTrigger(
+                                    &seasoned_cryomancer_freeze::<1>(),
+                                ),
+                            },
+                        },
+                    }),
+                },
+            ]),
+        ),
+        AbilityDef::activated(
+            "{3}{U}{U}, Exile this card from your graveyard: Draw two cards.",
+            &[CostDef::Mana(mana_cost!("{3}{U}{U}")), CostDef::ExileSource],
+            abilities::draw_cards(ValueDef::Constant(2)),
+        )
+        .with_source_zones(&[ZoneKind::Graveyard]),
+    ]),
 );
 
 // FRA 40 — Sphinx of False Conclusions
-// Audit: unsupported — Card rules have not been implemented.
 pub(in crate::card::sets) static SPHINX_OF_FALSE_CONCLUSIONS: CardRecord = CardRecord::new(
     "Sphinx of False Conclusions",
     "08ffbd51-2bd3-4262-8809-09576ce2b6f5",
     "Wylie Beckert",
-    CardRules::unsupported(),
+    CardRules::new_creature(mana_cost!("{2}{U}{U}"), &["Sphinx", "Illusion"], 4, 2).with_abilities(
+        &[
+            abilities::flash(),
+            abilities::flying(),
+            AbilityDef::triggered(
+                "Whenever this creature attacks, draw a card, then discard a card.",
+                TriggerEventDef::attacks(ObjectPredicateDef::Source),
+                EffectDef::Sequence(&[
+                    abilities::draw_cards(ValueDef::Constant(1)),
+                    EffectDef::Discard {
+                        recipient: EffectRecipientDef::Controller,
+                        amount: ValueDef::Constant(1),
+                        selection: DiscardSelectionDef::RecipientChooses,
+                        then: None,
+                    },
+                ]),
+            ),
+            AbilityDef::triggered_if(
+                "When this creature dies, if it isn't a token, create a token that's a copy of \
+                 it.",
+                TriggerEventDef::zone_changed(
+                    ObjectPredicateDef::Source,
+                    Some(ZoneKind::Battlefield),
+                    Some(ZoneKind::Graveyard),
+                ),
+                &TriggerConditionDef::SourceMatches {
+                    object: ObjectPredicateDef::Not(&ObjectPredicateDef::Token),
+                },
+                EffectDef::CreateToken(CreateTokenDef::new(TokenDef::Copy(&TokenCopyDef {
+                    object: &EffectRecipientDef::Source,
+                    exceptions: CopyExceptionsDef::NONE,
+                }))),
+            ),
+        ],
+    ),
 );
 
 // FRA 41 — Sphinx's Approach
@@ -749,12 +1427,77 @@ pub(in crate::card::sets) static SURVEILLANCE_PHANTASM: CardRecord = CardRecord:
 );
 
 // FRA 43 — The Theorist, Jace Beleren
-// Audit: unsupported — Card rules have not been implemented.
 pub(in crate::card::sets) static THE_THEORIST_JACE_BELEREN: CardRecord = CardRecord::new(
     "The Theorist, Jace Beleren",
     "20bb8c55-4b0b-425f-8201-b54fa2fdde86",
     "Ekaterina Burmak",
-    CardRules::unsupported(),
+    CardRules::new_planeswalker(mana_cost!("{2}{U}{U}"), &["Jace"], 3)
+        .with_supertype(CardSupertype::Legendary)
+        .with_abilities(&[
+            AbilityDef::triggered(
+                "At the beginning of each opponent's draw step, you draw a card.",
+                TriggerEventDef::StepBegins {
+                    step: TurnStepDef::Draw,
+                    player: PlayerRelation::Opponent,
+                },
+                abilities::draw_cards(ValueDef::Constant(1)),
+            ),
+            AbilityDef::activated(
+                "+1: Create a 1/1 blue Illusion creature token.",
+                &[CostDef::Loyalty(ValueDef::Constant(1))],
+                EffectDef::CreateToken(CreateTokenDef::new(TokenDef::Literal(
+                    TokenCharacteristics::creature(&["Illusion"], &[ManaColor::Blue], 1, 1)
+                        .with_art(CardArt::new(
+                            "7bda0b63-fd0f-495d-9eb0-20057571c0ee",
+                            "Daniel Cotter",
+                        )),
+                ))),
+            ),
+            // One opponent in this engine, so "for each opponent, up to one target ... that
+            // player controls" is a single slot over what that opponent controls.
+            AbilityDef::activated_with_targets(
+                "−2: For each opponent, return up to one target artifact or creature that \
+                 player controls to its owner's hand.",
+                &[CostDef::Loyalty(ValueDef::Constant(-2))],
+                &[AbilityTargetDef::up_to(
+                    AbilityTargetPredicate::Object {
+                        object: ObjectPredicateDef::AnyOf(&[
+                            ObjectPredicateDef::HasType(CardType::Artifact),
+                            ObjectPredicateDef::HasType(CardType::Creature),
+                        ]),
+                        zones: &[ZoneKind::Battlefield],
+                        controller: Some(PlayerRelation::Opponent),
+                        owner: None,
+                    },
+                    1,
+                )],
+                EffectDef::move_to_zone(
+                    EffectRecipientDef::Target(TargetIndex::PRIMARY),
+                    ZoneKind::Hand,
+                    ZonePlacement::Top,
+                ),
+            ),
+            AbilityDef::activated(
+                "−6: Draw three cards. Then put X +1/+1 counters on each creature you control, \
+                 where X is the number of cards in your hand.",
+                &[CostDef::Loyalty(ValueDef::Constant(-6))],
+                EffectDef::Sequence(&[
+                    abilities::draw_cards(ValueDef::Constant(3)),
+                    EffectDef::AddCounters {
+                        object: EffectRecipientDef::matching_objects(
+                            ObjectPredicateDef::HasType(CardType::Creature),
+                            &[ZoneKind::Battlefield],
+                            PlayerRelation::You,
+                        ),
+                        kind: CounterKind::PlusOnePlusOne,
+                        amount: ValueDef::CardsInHandAbove {
+                            player: PlayerRelation::You,
+                            threshold: 0,
+                        },
+                    },
+                ]),
+            ),
+        ]),
 );
 
 // FRA 44 — Theorist's Proxy
@@ -789,12 +1532,24 @@ pub(in crate::card::sets) static THEORIST_S_PROXY: CardRecord = CardRecord::new(
 );
 
 // FRA 45 — Undulating Witness
-// Audit: unsupported — Card rules have not been implemented.
 pub(in crate::card::sets) static UNDULATING_WITNESS: CardRecord = CardRecord::new(
     "Undulating Witness",
     "0adbb4b2-a142-48da-8f4b-fa91529dbac4",
     "Alexander Ostrowski",
-    CardRules::unsupported(),
+    CardRules::new_creature(mana_cost!("{4}{U}"), &["Serpent"], 3, 5).with_abilities(&[
+        abilities::flying(),
+        abilities::apply_to_self_until_end_of_turn(
+            "{2}: This creature gets +1/-1 until end of turn.",
+            &[CostDef::Mana(mana_cost!("{2}"))],
+            AppliedEffectDef::modify_power_toughness(ValueDef::Constant(1), ValueDef::Constant(-1)),
+        ),
+        abilities::typecycling!(
+            "Basic landcycling {2} ({2}, Discard this card: Search your library for a basic \
+             land card, reveal it, put it into your hand, then shuffle.)",
+            &[CostDef::Mana(mana_cost!("{2}"))],
+            A_BASIC_LAND_CARD
+        ),
+    ]),
 );
 
 // FRA 46 — Unsummon (reprint)
@@ -805,39 +1560,141 @@ const UNSUMMON_REPRINT: PrintingRecord = PrintingRecord::reprint(
 );
 
 // FRA 48 — Apex Witchstalker
-// Audit: unsupported — Card rules have not been implemented.
 pub(in crate::card::sets) static APEX_WITCHSTALKER: CardRecord = CardRecord::new(
     "Apex Witchstalker",
     "cd56f047-6bdc-4e83-8a7c-923ebad26302",
     "Jason Mowry",
-    CardRules::unsupported(),
+    CardRules::new_creature(mana_cost!("{4}{B}{B}"), &["Wolf"], 6, 4).with_abilities(&[
+        abilities::menace(),
+        AbilityDef::triggered(
+            "When this creature enters or dies, you gain 2 life.",
+            TriggerEventDef::AnyOf(&[
+                TriggerEventDef::zone_changed(
+                    ObjectPredicateDef::Source,
+                    None,
+                    Some(ZoneKind::Battlefield),
+                ),
+                TriggerEventDef::zone_changed(
+                    ObjectPredicateDef::Source,
+                    Some(ZoneKind::Battlefield),
+                    Some(ZoneKind::Graveyard),
+                ),
+            ]),
+            EffectDef::GainLife {
+                recipient: EffectRecipientDef::Controller,
+                amount: ValueDef::Constant(2),
+            },
+        ),
+        abilities::typecycling!(
+            "Basic landcycling {2} ({2}, Discard this card: Search your library for a basic \
+             land card, reveal it, put it into your hand, then shuffle.)",
+            &[CostDef::Mana(mana_cost!("{2}"))],
+            A_BASIC_LAND_CARD
+        ),
+    ]),
 );
 
 // FRA 50 — Break Under Pressure
-// Audit: unsupported — Card rules have not been implemented.
 pub(in crate::card::sets) static BREAK_UNDER_PRESSURE: CardRecord = CardRecord::new(
     "Break Under Pressure",
     "46974d94-e900-43e4-92b5-4fb9b9f7cf46",
     "Jeff Miracola",
-    CardRules::unsupported(),
+    CardRules::new_instant(mana_cost!("{2}{B}")).with_ability(AbilityDef::spell_with_targets(
+        "Target opponent sacrifices a creature or planeswalker with the greatest mana value \
+         among creatures and planeswalkers they control. You gain 2 life.",
+        &[AbilityTargetDef::exactly_one(
+            AbilityTargetPredicate::Player(PlayerRelation::Opponent),
+        )],
+        EffectDef::Sequence(&[
+            // Creatures and planeswalkers are one group: the greatest mana value is read
+            // across both, and only a permanent that has it can be chosen.
+            EffectDef::Choose(ChooseDef {
+                binding: ObjectChoiceBindingDef::Object(Binding!("sacrificed")),
+                unchosen: None,
+                chooser: PlayerRefDef::Target(TargetIndex::PRIMARY),
+                candidates: ObjectSetDef::Query(ObjectQueryDef::controlled_by(
+                    ObjectPredicateDef::All(&[
+                        A_CREATURE_OR_PLANESWALKER,
+                        ObjectPredicateDef::ManaValueEqualTo(ValueDef::AggregateObjectValues(
+                            &ObjectValueAggregateDef {
+                                objects: ObjectSetDef::Query(ObjectQueryDef::controlled_by(
+                                    A_CREATURE_OR_PLANESWALKER,
+                                    &[ZoneKind::Battlefield],
+                                    PlayerSetDef::One(PlayerRefDef::Target(TargetIndex::PRIMARY)),
+                                )),
+                                select: ObjectValueDef::ManaValue,
+                                operation: AggregateOperationDef::Maximum,
+                            },
+                        )),
+                    ]),
+                    &[ZoneKind::Battlefield],
+                    PlayerSetDef::One(PlayerRefDef::Target(TargetIndex::PRIMARY)),
+                )),
+                exclude: None,
+                minimum: 1,
+                maximum: 1,
+                visibility: ChoiceVisibilityDef::Public,
+                then: &EffectDef::sacrifice(EffectRecipientDef::object(ObjectRefDef::Binding(
+                    Binding!("sacrificed"),
+                ))),
+            }),
+            EffectDef::GainLife {
+                recipient: EffectRecipientDef::Controller,
+                amount: ValueDef::Constant(2),
+            },
+        ]),
+    )),
 );
 
 // FRA 51 — Cast Away Doubt
-// Audit: unsupported — Card rules have not been implemented.
 pub(in crate::card::sets) static CAST_AWAY_DOUBT: CardRecord = CardRecord::new(
     "Cast Away Doubt",
     "3b5b28a4-0abd-4dc2-9856-c9a8d27f6a2d",
     "Zara Alfonso",
-    CardRules::unsupported(),
+    CardRules::new_sorcery(mana_cost!("{2}{B}")).with_ability(AbilityDef::spell(
+        "Draw two cards. Cast Away Doubt deals 2 damage to each player.",
+        EffectDef::Sequence(&[
+            abilities::draw_cards(ValueDef::Constant(2)),
+            EffectDef::damage(EffectRecipientDef::EachPlayer, ValueDef::Constant(2)),
+        ]),
+    )),
 );
 
 // FRA 52 — Dark Matter Manipulator
-// Audit: unsupported — Card rules have not been implemented.
 pub(in crate::card::sets) static DARK_MATTER_MANIPULATOR: CardRecord = CardRecord::new(
     "Dark Matter Manipulator",
     "4ec912d5-cbe7-4d07-9ece-b03ac02d3055",
     "Steven Belledin",
-    CardRules::unsupported(),
+    CardRules::new_creature(mana_cost!("{B}"), &["Human", "Warlock"], 1, 2).with_abilities(&[
+        abilities::enters_trigger(
+            "When this creature enters, mill three cards.",
+            EffectDef::Mill {
+                player: EffectRecipientDef::Controller,
+                amount: ValueDef::Constant(3),
+            },
+        ),
+        AbilityDef::static_ability(
+            "This creature gets +2/+0 for every seven cards in your graveyard.",
+            EffectDef::StaticApply {
+                recipient: EffectRecipientDef::Source,
+                effect: AppliedEffectDef::modify_power_toughness(
+                    ValueDef::Scaled(&ScaledValueDef::new(
+                        ValueDef::Quotient(&QuotientValueDef::new(
+                            ValueDef::CountMatchingObjects(&ObjectQueryDef::owned_by(
+                                ObjectPredicateDef::Any,
+                                &[ZoneKind::Graveyard],
+                                PlayerSetDef::Related(PlayerRelation::You),
+                            )),
+                            ValueDef::Constant(7),
+                            RoundingDef::Down,
+                        )),
+                        2,
+                    )),
+                    ValueDef::Constant(0),
+                ),
+            },
+        ),
+    ]),
 );
 
 // FRA 53 — Darklight Phoenix
@@ -851,12 +1708,29 @@ pub(in crate::card::sets) static DARKLIGHT_PHOENIX: CardRecord = CardRecord::new
 );
 
 // FRA 54 — Extended Absence
-// Audit: unsupported — Card rules have not been implemented.
 pub(in crate::card::sets) static EXTENDED_ABSENCE: CardRecord = CardRecord::new(
     "Extended Absence",
     "eb4b6ed8-782e-4473-abc9-d50bf2275c6a",
     "Nathaniel Himawan",
-    CardRules::unsupported(),
+    CardRules::new_instant(mana_cost!("{3}{B}")).with_ability(AbilityDef::spell_with_targets(
+        "Exile target creature or planeswalker. Extended Absence deals 1 damage to each \
+         opponent and you gain 1 life.",
+        &[AbilityTargetDef::exactly_one_permanent(
+            A_CREATURE_OR_PLANESWALKER,
+        )],
+        EffectDef::Sequence(&[
+            EffectDef::move_to_zone(
+                EffectRecipientDef::Target(TargetIndex::PRIMARY),
+                ZoneKind::Exile,
+                ZonePlacement::Top,
+            ),
+            EffectDef::damage(EffectRecipientDef::Opponent, ValueDef::Constant(1)),
+            EffectDef::GainLife {
+                recipient: EffectRecipientDef::Controller,
+                amount: ValueDef::Constant(1),
+            },
+        ]),
+    )),
 );
 
 // FRA 55 — Extrapolate the Impossible
@@ -877,21 +1751,70 @@ const LAST_GASP_REPRINT: PrintingRecord = PrintingRecord::reprint(
 );
 
 // FRA 57 — Lich's Relic
-// Audit: unsupported — Card rules have not been implemented.
 pub(in crate::card::sets) static LICH_S_RELIC: CardRecord = CardRecord::new(
     "Lich's Relic",
     "b105511d-5022-4a84-b6ce-4bb433e93a62",
     "Gaboleps",
-    CardRules::unsupported(),
+    CardRules::new_artifact(mana_cost!("{B}"))
+        .with_subtypes(&["Equipment"])
+        .with_abilities(&[
+            abilities::enters_trigger(
+                "When this Equipment enters, you may pay {2}. When you do, for each opponent, \
+                 destroy up to one target creature or planeswalker that player controls.",
+                EffectDef::PayOr(PayOrDef::optional(
+                    &[CostDef::Mana(mana_cost!("{2}"))],
+                    // One opponent in this engine, so "for each opponent, up to one target
+                    // ... that player controls" is a single slot over what they control.
+                    &EffectDef::ReflexiveTrigger(&AbilityDef::triggered_with_targets(
+                        "When you do, for each opponent, destroy up to one target creature or \
+                         planeswalker that player controls.",
+                        TriggerEventDef::Reflexive,
+                        &[AbilityTargetDef::up_to(
+                            AbilityTargetPredicate::Object {
+                                object: A_CREATURE_OR_PLANESWALKER,
+                                zones: &[ZoneKind::Battlefield],
+                                controller: Some(PlayerRelation::Opponent),
+                                owner: None,
+                            },
+                            1,
+                        )],
+                        EffectDef::destroy_target(TargetIndex::PRIMARY),
+                    )),
+                )),
+            ),
+            AbilityDef::static_ability(
+                "Equipped creature gets +2/+1.",
+                EffectDef::StaticApply {
+                    recipient: EffectRecipientDef::AttachedPermanent,
+                    effect: AppliedEffectDef::modify_power_toughness(
+                        ValueDef::Constant(2),
+                        ValueDef::Constant(1),
+                    ),
+                },
+            ),
+            abilities::equip(&[CostDef::Mana(mana_cost!("{2}"))], "Equip {2}"),
+        ]),
 );
 
 // FRA 58 — Multiply by Zero
-// Audit: unsupported — Card rules have not been implemented.
 pub(in crate::card::sets) static MULTIPLY_BY_ZERO: CardRecord = CardRecord::new(
     "Multiply by Zero",
     "90d684a4-9639-4792-8760-2011a7a85370",
     "Florian Herold",
-    CardRules::unsupported(),
+    CardRules::new_instant(mana_cost!("{1}{B}")).with_ability(AbilityDef::spell_with_targets(
+        "Target creature has base power and toughness 0/0 until end of turn.",
+        &[AbilityTargetDef::exactly_one_permanent(
+            ObjectPredicateDef::HasType(CardType::Creature),
+        )],
+        EffectDef::Apply {
+            recipient: EffectRecipientDef::Target(TargetIndex::PRIMARY),
+            effect: AppliedEffectDef::set_base_power_toughness(
+                ValueDef::Constant(0),
+                ValueDef::Constant(0),
+            ),
+            duration: ResolvedEffectDurationDef::UntilEndOfTurn,
+        },
+    )),
 );
 
 // FRA 59 — Overwrite the Multiverse
@@ -921,21 +1844,49 @@ pub(in crate::card::sets) static OVERWRITE_THE_MULTIVERSE: CardRecord = CardReco
 );
 
 // FRA 60 — Rampart Hunter
-// Audit: unsupported — Card rules have not been implemented.
 pub(in crate::card::sets) static RAMPART_HUNTER: CardRecord = CardRecord::new(
     "Rampart Hunter",
     "f4a80225-7459-4151-86bb-8fdea31c39a6",
     "Néstor Ossandón Leal",
-    CardRules::unsupported(),
+    CardRules::new_creature(mana_cost!("{3}{B}"), &["Horror"], 3, 3).with_abilities(&[
+        abilities::deathtouch(),
+        abilities::enters_trigger_with_targets(
+            "When this creature enters, target creature gets +2/+2 and gains deathtouch until \
+             end of turn.",
+            &[AbilityTargetDef::exactly_one_permanent(
+                ObjectPredicateDef::HasType(CardType::Creature),
+            )],
+            EffectDef::Apply {
+                recipient: EffectRecipientDef::Target(TargetIndex::PRIMARY),
+                effect: AppliedEffectDef::Composite(&[
+                    AppliedEffectDef::modify_power_toughness(
+                        ValueDef::Constant(2),
+                        ValueDef::Constant(2),
+                    ),
+                    AppliedEffectDef::add_ability(&abilities::deathtouch()),
+                ]),
+                duration: ResolvedEffectDurationDef::UntilEndOfTurn,
+            },
+        ),
+    ]),
 );
 
 // FRA 61 — Rank Rat
-// Audit: unsupported — Card rules have not been implemented.
 pub(in crate::card::sets) static RANK_RAT: CardRecord = CardRecord::new(
     "Rank Rat",
     "4ff6da82-d7dd-4b59-b7e6-30670cea7169",
     "Johann Bodin",
-    CardRules::unsupported(),
+    CardRules::new_creature(mana_cost!("{1}{B}"), &["Zombie", "Rat"], 1, 1).with_ability(
+        abilities::enters_trigger(
+            "When this creature enters, each opponent discards a card.",
+            EffectDef::Discard {
+                recipient: EffectRecipientDef::Opponent,
+                amount: ValueDef::Constant(1),
+                selection: DiscardSelectionDef::RecipientChooses,
+                then: None,
+            },
+        ),
+    ),
 );
 
 // FRA 62 — Rewrite Regrets
@@ -950,10 +1901,7 @@ pub(in crate::card::sets) static REWRITE_REGRETS: CardRecord = CardRecord::new(
             &[AbilityTargetDef::exactly_one(
                 AbilityTargetPredicate::Object {
                     object: ObjectPredicateDef::All(&[
-                        ObjectPredicateDef::AnyOf(&[
-                            ObjectPredicateDef::HasType(CardType::Creature),
-                            ObjectPredicateDef::HasType(CardType::Planeswalker),
-                        ]),
+                        A_CREATURE_OR_PLANESWALKER,
                         ObjectPredicateDef::ManaValueAtMost(6),
                     ]),
                     zones: &[ZoneKind::Graveyard],
@@ -996,21 +1944,49 @@ pub(in crate::card::sets) static SANCTUM_LURKER: CardRecord = CardRecord::new(
 );
 
 // FRA 65 — Screeching Soulbreaker
-// Audit: unsupported — Card rules have not been implemented.
 pub(in crate::card::sets) static SCREECHING_SOULBREAKER: CardRecord = CardRecord::new(
     "Screeching Soulbreaker",
     "738667a1-c184-43ea-829f-49fbb69b6fc0",
     "Pavel Kolomeyets",
-    CardRules::unsupported(),
+    CardRules::new_creature(mana_cost!("{2}{B}"), &["Siren", "Bard"], 1, 4).with_abilities(&[
+        abilities::flying(),
+        AbilityDef::triggered(
+            "Whenever this creature attacks, it deals 1 damage to each opponent and you gain 1 \
+             life.",
+            TriggerEventDef::attacks(ObjectPredicateDef::Source),
+            EffectDef::Sequence(&[
+                EffectDef::damage(EffectRecipientDef::Opponent, ValueDef::Constant(1)),
+                EffectDef::GainLife {
+                    recipient: EffectRecipientDef::Controller,
+                    amount: ValueDef::Constant(1),
+                },
+            ]),
+        ),
+    ]),
 );
 
 // FRA 66 — Silence the Echo
-// Audit: unsupported — Card rules have not been implemented.
 pub(in crate::card::sets) static SILENCE_THE_ECHO: CardRecord = CardRecord::new(
     "Silence the Echo",
     "f1d274db-751b-4414-a38d-762198168e91",
     "Pavel Kolomeyets",
-    CardRules::unsupported(),
+    CardRules::new_sorcery(mana_cost!("{1}{B}")).with_ability(
+        AbilityDef::spell_with_targets(
+            "As an additional cost to cast this spell, sacrifice a creature or planeswalker or \
+             pay {3}.\nDestroy target creature or planeswalker.",
+            &[AbilityTargetDef::exactly_one_permanent(
+                A_CREATURE_OR_PLANESWALKER,
+            )],
+            EffectDef::destroy_target(TargetIndex::PRIMARY),
+        )
+        .with_spell_additional_cost(&CostDef::Choice(&[
+            CostDef::Sacrifice {
+                object: A_CREATURE_OR_PLANESWALKER,
+                quantity: CostQuantityDef::Fixed(1),
+            },
+            CostDef::Mana(mana_cost!("{3}")),
+        ])),
+    ),
 );
 
 // FRA 67 — Solve for Disappointment
@@ -1050,21 +2026,58 @@ pub(in crate::card::sets) static SOLVE_FOR_DISAPPOINTMENT: CardRecord = CardReco
 );
 
 // FRA 68 — Terminal Criticism
-// Audit: unsupported — Card rules have not been implemented.
 pub(in crate::card::sets) static TERMINAL_CRITICISM: CardRecord = CardRecord::new(
     "Terminal Criticism",
     "7ebd7e38-b27c-4c6e-aaea-e8ee5ba5e5df",
     "Borja Pindado",
-    CardRules::unsupported(),
+    CardRules::new_instant(mana_cost!("{1}{B}")).with_ability(AbilityDef::spell_with_targets(
+        "Destroy target creature or planeswalker that's blue or red. You gain 1 life.",
+        &[AbilityTargetDef::exactly_one_permanent(
+            ObjectPredicateDef::All(&[
+                A_CREATURE_OR_PLANESWALKER,
+                ObjectPredicateDef::AnyOf(&[
+                    ObjectPredicateDef::Color(ManaColor::Blue),
+                    ObjectPredicateDef::Color(ManaColor::Red),
+                ]),
+            ]),
+        )],
+        EffectDef::Sequence(&[
+            EffectDef::destroy_target(TargetIndex::PRIMARY),
+            EffectDef::GainLife {
+                recipient: EffectRecipientDef::Controller,
+                amount: ValueDef::Constant(1),
+            },
+        ]),
+    )),
 );
 
 // FRA 69 — Theoretical Necromancer
-// Audit: unsupported — Card rules have not been implemented.
 pub(in crate::card::sets) static THEORETICAL_NECROMANCER: CardRecord = CardRecord::new(
     "Theoretical Necromancer",
     "e36a7908-1e22-494b-adb4-e72ac0974d62",
     "Chris Rallis",
-    CardRules::unsupported(),
+    CardRules::new_creature(mana_cost!("{2}{B}"), &["Vampire", "Warlock"], 4, 1).with_ability(
+        AbilityDef::activated_with_targets(
+            "{3}{B}, Exile this card from your graveyard: Return another target creature card \
+             from your graveyard to your hand.",
+            &[CostDef::Mana(mana_cost!("{3}{B}")), CostDef::ExileSource],
+            &[
+                AbilityTargetDef::exactly_one(AbilityTargetPredicate::Object {
+                    object: ObjectPredicateDef::HasType(CardType::Creature),
+                    zones: &[ZoneKind::Graveyard],
+                    controller: None,
+                    owner: Some(PlayerRelation::You),
+                })
+                .excluding_source(),
+            ],
+            EffectDef::move_to_zone(
+                EffectRecipientDef::Target(TargetIndex::PRIMARY),
+                ZoneKind::Hand,
+                ZonePlacement::Top,
+            ),
+        )
+        .with_source_zones(&[ZoneKind::Graveyard]),
+    ),
 );
 
 // FRA 71 — Vraska's Final Mercy
@@ -1078,10 +2091,7 @@ pub(in crate::card::sets) static VRASKA_S_FINAL_MERCY: CardRecord = CardRecord::
             AbilityDef::spell_with_targets(
                 "You lose 2 life. Destroy target creature or planeswalker.",
                 &[AbilityTargetDef::exactly_one_permanent(
-                    ObjectPredicateDef::AnyOf(&[
-                        ObjectPredicateDef::HasType(CardType::Creature),
-                        ObjectPredicateDef::HasType(CardType::Planeswalker),
-                    ]),
+                    A_CREATURE_OR_PLANESWALKER,
                 )],
                 EffectDef::Sequence(&[
                     EffectDef::LoseLife {
@@ -2994,10 +4004,7 @@ pub(in crate::card::sets) static WAY_OF_THE_WARLORD: CardRecord = CardRecord::ne
                     &[
                         AbilityTargetDef::up_to(
                             AbilityTargetPredicate::Object {
-                                object: ObjectPredicateDef::AnyOf(&[
-                                    ObjectPredicateDef::HasType(CardType::Creature),
-                                    ObjectPredicateDef::HasType(CardType::Planeswalker),
-                                ]),
+                                object: A_CREATURE_OR_PLANESWALKER,
                                 zones: &[ZoneKind::Battlefield],
                                 controller: None,
                                 owner: None,

@@ -397,6 +397,7 @@ mod rabid_wombat;
 mod raid_bombardment;
 mod rampage;
 mod random_discard;
+mod reality_fracture;
 mod reaper_from_the_abyss;
 mod reckless_impulse;
 mod reflexive_triggers;

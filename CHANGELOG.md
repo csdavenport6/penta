@@ -20,6 +20,15 @@ the bot-wire epoch.
 
 ## Unreleased
 
+- Implement 38 Reality Fracture cards in white, blue, and black (collector
+  numbers 6 to 69) from existing effects. Return to the Light Realms stays
+  unsupported: an Aura card put onto the battlefield without being cast needs
+  the CR 303.4f host choice, and a plain zone move brings it in unattached. A
+  target slot that excludes its ability's source now also excludes a source
+  that is a card in a graveyard or other nonbattlefield zone, which
+  Theoretical Necromancer's "another target creature card" relies on.
+  Protocol, checkpoint, and replay versions are unchanged.
+
 - Implement Empower Jace (CR 701.71) and the 27 Reality Fracture cards built
   on it: the 21 that empower Jace and the six that grant a loyalty ability to
   planeswalkers you control. `reality_fracture::empower_jace(amount)` composes
