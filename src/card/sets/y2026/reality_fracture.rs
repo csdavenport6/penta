@@ -7,7 +7,62 @@
 
 use super::CardRecord;
 use super::PrintingRecord;
+use crate::Binding;
+use crate::ParentBinding;
+use crate::TargetIndex;
+use crate::card::AbilityDef;
+use crate::card::AbilityTargetDef;
+use crate::card::AbilityTargetPredicate;
+use crate::card::AddManaEffectDef;
+use crate::card::AggregateOperationDef;
+use crate::card::AppliedEffectDef;
+use crate::card::AppliedRuleDef;
+use crate::card::AttackEventMatcherDef;
+use crate::card::CardArt;
 use crate::card::CardRules;
+use crate::card::CardSupertype;
+use crate::card::CardType;
+use crate::card::CardTypeSet;
+use crate::card::ChoiceVisibilityDef;
+use crate::card::ChooseDef;
+use crate::card::ComparisonDef;
+use crate::card::CostDef;
+use crate::card::CounterKind;
+use crate::card::CreateTokenDef;
+use crate::card::DamageAssignmentDef;
+use crate::card::EffectChoiceDef;
+use crate::card::EffectDef;
+use crate::card::EffectRecipientDef;
+use crate::card::InstalledTriggerDef;
+use crate::card::InstalledTriggerLifetimeDef;
+use crate::card::ManaColor;
+use crate::card::MoveObjectsDef;
+use crate::card::ObjectChoiceBindingDef;
+use crate::card::ObjectPredicateDef;
+use crate::card::ObjectQueryDef;
+use crate::card::ObjectRefDef;
+use crate::card::ObjectSetDef;
+use crate::card::ObjectValueAggregateDef;
+use crate::card::ObjectValueDef;
+use crate::card::PayOrDef;
+use crate::card::PlayerRefDef;
+use crate::card::PlayerRelation;
+use crate::card::PlayerRuleDef;
+use crate::card::PlayerSetDef;
+use crate::card::ResolvedEffectDurationDef;
+use crate::card::SpellCastQueryDef;
+use crate::card::SubtypeDef;
+use crate::card::SumValueDef;
+use crate::card::TokenCharacteristics;
+use crate::card::TokenDef;
+use crate::card::TriggerConditionDef;
+use crate::card::TriggerEventDef;
+use crate::card::ValueComparisonDef;
+use crate::card::ValueDef;
+use crate::card::ZoneKind;
+use crate::card::ZonePlacement;
+use crate::card::abilities;
+use crate::mana_cost;
 
 use crate::card::sets::y1993::alpha as catalog_lea;
 use crate::card::sets::y2005::ravnica_city_of_guilds as catalog_rav;
@@ -26,6 +81,137 @@ pub const SET: crate::card::CardSet = crate::card::CardSet::new(&crate::card::Ca
 pub(in crate::card::sets) const DEFINITION: crate::card::sets::SetDefinition =
     crate::card::sets::SetDefinition::new(SET, CARDS, ADDITIONAL_PRINTINGS, file!());
 
+// Token identity compares the ability list by address, so the one Jace token
+// every Empower card creates has to point at this one list.
+static JACE_TOKEN_ABILITIES: [AbilityDef; 2] = [
+    AbilityDef::activated(
+        "−1: Surveil 1.",
+        &[CostDef::Loyalty(ValueDef::Constant(-1))],
+        abilities::surveil(ValueDef::Constant(1)),
+    ),
+    AbilityDef::activated(
+        "−3: Draw a card.",
+        &[CostDef::Loyalty(ValueDef::Constant(-3))],
+        EffectDef::DrawCards {
+            recipient: EffectRecipientDef::Controller,
+            amount: ValueDef::Constant(1),
+        },
+    ),
+];
+
+/// The blue Jace planeswalker token Empower Jace creates. It has no printed
+/// loyalty, so it enters with none (CR 701.71a).
+const JACE_TOKEN: TokenCharacteristics = TokenCharacteristics::new(
+    CardTypeSet::single(CardType::Planeswalker),
+    &["Jace"],
+    &[ManaColor::Blue],
+    None,
+)
+.with_abilities(&JACE_TOKEN_ABILITIES)
+.with_art(CardArt::new(
+    "8d1e424f-6407-4f8c-bed2-eaf148237c81",
+    "Manuel Castañón",
+));
+
+const CADET_TOKEN: TokenCharacteristics =
+    TokenCharacteristics::creature(&["Wizard", "Soldier"], &[], 2, 2)
+        .with_name("Cadet")
+        .with_art(CardArt::new(
+            "8f4534d8-2783-484f-8ebf-a47b1cc4c6df",
+            "Elizabeth Peiró",
+        ));
+
+static BEAST_TOKEN_ABILITIES: [AbilityDef; 1] = [abilities::trample()];
+const BEAST_TOKEN: TokenCharacteristics =
+    TokenCharacteristics::creature(&["Beast"], &[ManaColor::Green], 4, 4)
+        .with_abilities(&BEAST_TOKEN_ABILITIES)
+        .with_art(CardArt::new(
+            "859bda9a-fa90-4ad3-b0c1-6fc62e27c12f",
+            "Simon Dominic",
+        ));
+
+/// Any Jace planeswalker token you control, however you came by it. A token
+/// copy of a nontoken Jace counts; the nontoken Jace does not.
+const A_JACE_TOKEN_YOU_CONTROL: ObjectQueryDef = ObjectQueryDef::controlled_by(
+    ObjectPredicateDef::All(&[
+        ObjectPredicateDef::Token,
+        ObjectPredicateDef::HasType(CardType::Planeswalker),
+        ObjectPredicateDef::Subtype(SubtypeDef::from_name("Jace")),
+    ]),
+    &[ZoneKind::Battlefield],
+    PlayerSetDef::Related(PlayerRelation::You),
+);
+
+const EMPOWER_AMOUNT: Binding = Binding!("empower_jace_amount");
+const EMPOWERED_JACE: Binding = Binding!("empowered_jace");
+
+/// Empower Jace N (CR 701.71a): "If you don't control a Jace planeswalker
+/// token, create a blue Jace planeswalker token with 0 loyalty, '[−1]:
+/// Surveil 1,' and '[−3]: Draw a card.' Choose a Jace planeswalker token you
+/// control. Put N loyalty counters on it."
+///
+/// N is worked out before the token arrives, so "where X is the number of
+/// ..." counts the board the instruction started from. A token created here
+/// sits at 0 loyalty only until the counters land in the same resolution;
+/// state-based actions are not checked in between.
+pub(in crate::card::sets) const fn empower_jace(amount: ValueDef) -> EffectDef {
+    EffectDef::BindValue {
+        binding: EMPOWER_AMOUNT,
+        value: amount,
+        // A const block rather than a plain reference: the body calls const fns,
+        // which a temporary inside a const fn body will not promote to `'static`.
+        effect: &const {
+            EffectDef::Sequence(&[
+                EffectDef::IfCondition {
+                    condition: &TriggerConditionDef::ObjectCount {
+                        query: A_JACE_TOKEN_YOU_CONTROL,
+                        comparison: ComparisonDef::Equal,
+                        amount: 0,
+                    },
+                    then: &EffectDef::CreateToken(CreateTokenDef::new(TokenDef::Literal(
+                        JACE_TOKEN,
+                    ))),
+                },
+                EffectDef::Choose(ChooseDef {
+                    binding: ObjectChoiceBindingDef::Object(EMPOWERED_JACE),
+                    unchosen: None,
+                    chooser: PlayerRefDef::EffectController,
+                    candidates: ObjectSetDef::Query(A_JACE_TOKEN_YOU_CONTROL),
+                    exclude: None,
+                    minimum: 1,
+                    maximum: 1,
+                    visibility: ChoiceVisibilityDef::Public,
+                    then: &EffectDef::AddCounters {
+                        object: EffectRecipientDef::object(ObjectRefDef::Binding(EMPOWERED_JACE)),
+                        kind: CounterKind::Loyalty,
+                        amount: ValueDef::BoundValue(EMPOWER_AMOUNT),
+                    },
+                }),
+            ])
+        },
+    }
+}
+
+/// "Planeswalkers you control have '[cost]: ...'". The grant is an ordinary
+/// static ability-adding effect, so the loyalty ability it adds shares its
+/// planeswalker's one activation each turn with the printed ones (CR 606.3).
+const fn planeswalkers_you_control_have(
+    text: &'static str,
+    ability: &'static AbilityDef,
+) -> AbilityDef {
+    AbilityDef::static_ability(
+        text,
+        EffectDef::StaticApply {
+            recipient: EffectRecipientDef::matching_objects(
+                ObjectPredicateDef::HasType(CardType::Planeswalker),
+                &[ZoneKind::Battlefield],
+                PlayerRelation::You,
+            ),
+            effect: AppliedEffectDef::add_ability(ability),
+        },
+    )
+}
+
 // FRA 1 — Emrakul, the Exigent Doom
 // Audit: unsupported — Needs an activation from hand that exiles the card as a cost, and a granted
 // land ability lasting until that card is cast from exile.
@@ -37,21 +223,52 @@ pub(in crate::card::sets) static EMRAKUL_THE_EXIGENT_DOOM: CardRecord = CardReco
 );
 
 // FRA 2 — Academic Ascent
-// Audit: unsupported — Card rules have not been implemented.
 pub(in crate::card::sets) static ACADEMIC_ASCENT: CardRecord = CardRecord::new(
     "Academic Ascent",
     "730d8c28-1e58-4b8e-89e9-445d154d2e83",
     "Randy Gallegos",
-    CardRules::unsupported(),
+    CardRules::new_instant(mana_cost!("{1}{W}")).with_abilities(&[
+        AbilityDef::spell_with_targets(
+            "Target creature gets +2/+2 and gains flying until end of turn.",
+            &[AbilityTargetDef::exactly_one_permanent(
+                ObjectPredicateDef::HasType(CardType::Creature),
+            )],
+            EffectDef::Apply {
+                recipient: EffectRecipientDef::Target(TargetIndex::PRIMARY),
+                effect: AppliedEffectDef::Composite(&[
+                    AppliedEffectDef::modify_power_toughness(
+                        ValueDef::Constant(2),
+                        ValueDef::Constant(2),
+                    ),
+                    AppliedEffectDef::add_ability(&abilities::flying()),
+                ]),
+                duration: ResolvedEffectDurationDef::UntilEndOfTurn,
+            },
+        ),
+        AbilityDef::spell(
+            "Empower Jace 2. (Put two loyalty counters on a Jace token you control. If you \
+             don't control one, first create a blue Jace planeswalker token with \
+             \"[−1]: Surveil 1\" and \"[−3]: Draw a card.\")",
+            empower_jace(ValueDef::Constant(2)),
+        ),
+    ]),
 );
 
 // FRA 4 — Campus Crier
-// Audit: unsupported — Card rules have not been implemented.
 pub(in crate::card::sets) static CAMPUS_CRIER: CardRecord = CardRecord::new(
     "Campus Crier",
     "6047b14c-91d5-4f8e-af3f-057a541e2546",
     "Johan Grenier",
-    CardRules::unsupported(),
+    CardRules::new_creature(mana_cost!("{1}{W}"), &["Human", "Advisor"], 3, 1).with_ability(
+        AbilityDef::activated(
+            "{1}, Exile this card from your graveyard: Empower Jace 2. (Put two loyalty \
+             counters on a Jace token you control. If you don't control one, first create a \
+             blue Jace planeswalker token with \"[−1]: Surveil 1\" and \"[−3]: Draw a card.\")",
+            &[CostDef::Mana(mana_cost!("{1}")), CostDef::ExileSource],
+            empower_jace(ValueDef::Constant(2)),
+        )
+        .with_source_zones(&[ZoneKind::Graveyard]),
+    ),
 );
 
 // FRA 5 — Enlightened Confidant
@@ -119,12 +336,33 @@ pub(in crate::card::sets) static GUIDING_HYDRA: CardRecord = CardRecord::new(
 );
 
 // FRA 12 — Hexhaven Battalion
-// Audit: unsupported — Card rules have not been implemented.
 pub(in crate::card::sets) static HEXHAVEN_BATTALION: CardRecord = CardRecord::new(
     "Hexhaven Battalion",
     "3b6ac80e-c726-4bd0-893a-e666041a04a6",
     "Julia Griffin",
-    CardRules::unsupported(),
+    CardRules::new_sorcery(mana_cost!("{4}{W}{W}")).with_abilities(&[
+        AbilityDef::spell(
+            "Create three 2/2 colorless Wizard Soldier creature tokens named Cadet. Empower \
+             Jace 2. (Put two loyalty counters on a Jace token you control. If you don't \
+             control one, first create a blue Jace planeswalker token with \
+             \"[−1]: Surveil 1\" and \"[−3]: Draw a card.\")",
+            EffectDef::Sequence(&[
+                EffectDef::CreateToken(
+                    CreateTokenDef::new(TokenDef::Literal(CADET_TOKEN)).with_amount(3),
+                ),
+                empower_jace(ValueDef::Constant(2)),
+            ]),
+        ),
+        abilities::typecycling!(
+            "Basic landcycling {2} ({2}, Discard this card: Search your library for a basic \
+             land card, reveal it, put it into your hand, then shuffle.)",
+            &[CostDef::Mana(mana_cost!("{2}"))],
+            ObjectPredicateDef::All(&[
+                ObjectPredicateDef::HasType(CardType::Land),
+                ObjectPredicateDef::Supertype(CardSupertype::Basic),
+            ]),
+        ),
+    ]),
 );
 
 // FRA 13 — Kindred Judgment
@@ -183,12 +421,26 @@ pub(in crate::card::sets) static REFUTE_DESTINY: CardRecord = CardRecord::new(
 );
 
 // FRA 19 — Repurposed Enforcer
-// Audit: unsupported — Card rules have not been implemented.
 pub(in crate::card::sets) static REPURPOSED_ENFORCER: CardRecord = CardRecord::new(
     "Repurposed Enforcer",
     "35000e93-85d3-44f8-976a-5918ee4c71e0",
     "Chris Rallis",
-    CardRules::unsupported(),
+    CardRules::new_creature(mana_cost!("{1}{W}"), &["Human", "Soldier"], 3, 2).with_ability(
+        AbilityDef::triggered(
+            "Whenever this creature attacks, empower Jace X, where X is the number of \
+             creatures you control. (Put that many loyalty counters on a Jace token you \
+             control. If you don't control one, first create a blue Jace planeswalker token \
+             with \"[−1]: Surveil 1\" and \"[−3]: Draw a card.\")",
+            TriggerEventDef::attacks(ObjectPredicateDef::Source),
+            empower_jace(ValueDef::CountMatchingObjects(
+                &ObjectQueryDef::controlled_by(
+                    ObjectPredicateDef::HasType(CardType::Creature),
+                    &[ZoneKind::Battlefield],
+                    PlayerSetDef::Related(PlayerRelation::You),
+                ),
+            )),
+        ),
+    ),
 );
 
 // FRA 20 — Return to the Light Realms
@@ -237,12 +489,43 @@ pub(in crate::card::sets) static YOUR_FATE_ENDS_HERE: CardRecord = CardRecord::n
 );
 
 // FRA 25 — Countersculpt
-// Audit: unsupported — Card rules have not been implemented.
 pub(in crate::card::sets) static COUNTERSCULPT: CardRecord = CardRecord::new(
     "Countersculpt",
     "145b928d-a7ff-4fe5-ae4d-bbae7b1d955b",
     "Anna Podedworna",
-    CardRules::unsupported(),
+    CardRules::new_instant(mana_cost!("{U}{U}")).with_ability(
+        AbilityDef::spell_with_additional_cost(
+            "As an additional cost to cast this spell, behold a Jace or pay {1}. (To behold a \
+             Jace, choose a Jace you control or reveal a Jace card from your hand.)\nCounter \
+             target spell. Empower Jace 1. (Put a loyalty counter on a Jace token you control. \
+             If you don't control one, first create a blue Jace planeswalker token with \
+             \"[−1]: Surveil 1\" and \"[−3]: Draw a card.\")",
+            &[AbilityTargetDef::exactly_one(
+                AbilityTargetPredicate::Object {
+                    object: ObjectPredicateDef::Spell,
+                    zones: &[ZoneKind::Stack],
+                    controller: None,
+                    owner: None,
+                },
+            )],
+            CostDef::choice(&[
+                CostDef::Behold {
+                    object: ObjectPredicateDef::Subtype(SubtypeDef::from_name("Jace")),
+                    count: 1,
+                    choose_creature_type: false,
+                },
+                CostDef::pay_mana(mana_cost!("{1}")),
+            ]),
+            EffectDef::Sequence(&[
+                EffectDef::Counter {
+                    object: EffectRecipientDef::Target(TargetIndex::PRIMARY),
+                    zone: ZoneKind::Graveyard,
+                    placement: ZonePlacement::Top,
+                },
+                empower_jace(ValueDef::Constant(1)),
+            ]),
+        ),
+    ),
 );
 
 // FRA 26 — Cruel Calculations
@@ -303,12 +586,18 @@ pub(in crate::card::sets) static JACE_S_MACHINATIONS: CardRecord = CardRecord::n
 );
 
 // FRA 33 — Mindseeker Oculus
-// Audit: unsupported — Card rules have not been implemented.
 pub(in crate::card::sets) static MINDSEEKER_OCULUS: CardRecord = CardRecord::new(
     "Mindseeker Oculus",
     "f5324741-353a-4a70-adb2-b631b00806dd",
     "Ioannis Fiore",
-    CardRules::unsupported(),
+    CardRules::new_creature(mana_cost!("{2}{U}"), &["Homunculus"], 2, 1).with_ability(
+        abilities::enters_trigger(
+            "When this creature enters, empower Jace 4. (Put four loyalty counters on a Jace \
+             token you control. If you don't control one, first create a blue Jace \
+             planeswalker token with \"[−1]: Surveil 1\" and \"[−3]: Draw a card.\")",
+            empower_jace(ValueDef::Constant(4)),
+        ),
+    ),
 );
 
 // FRA 34 — Perfected Theory
@@ -321,12 +610,72 @@ pub(in crate::card::sets) static PERFECTED_THEORY: CardRecord = CardRecord::new(
 );
 
 // FRA 35 — Plan for All Outcomes
-// Audit: unsupported — Card rules have not been implemented.
 pub(in crate::card::sets) static PLAN_FOR_ALL_OUTCOMES: CardRecord = CardRecord::new(
     "Plan for All Outcomes",
     "c4effc17-0d0e-423a-b5f2-597ea6c71f67",
     "Chris Cold",
-    CardRules::unsupported(),
+    CardRules::new_enchantment(mana_cost!("{3}{U}")).with_abilities(&[
+        abilities::enters_trigger_with_targets(
+            "When this enchantment enters, the owner of up to one other target nonland \
+             permanent puts it on their choice of the top or bottom of their library.",
+            &[AbilityTargetDef::up_to(
+                AbilityTargetPredicate::Object {
+                    object: ObjectPredicateDef::Not(&ObjectPredicateDef::HasType(CardType::Land)),
+                    zones: &[ZoneKind::Battlefield],
+                    controller: None,
+                    owner: None,
+                },
+                1,
+            )
+            .excluding_source()],
+            EffectDef::ChooseEffect {
+                player: EffectRecipientDef::player(PlayerRefDef::OwnerOf(ObjectRefDef::Target(
+                    TargetIndex::PRIMARY,
+                ))),
+                choices: &[
+                    EffectChoiceDef {
+                        label: "Top",
+                        effect: EffectDef::move_to_zone(
+                            EffectRecipientDef::Target(TargetIndex::PRIMARY),
+                            ZoneKind::Library,
+                            ZonePlacement::Top,
+                        ),
+                    },
+                    EffectChoiceDef {
+                        label: "Bottom",
+                        effect: EffectDef::move_to_zone(
+                            EffectRecipientDef::Target(TargetIndex::PRIMARY),
+                            ZoneKind::Library,
+                            ZonePlacement::Bottom,
+                        ),
+                    },
+                ],
+            },
+        ),
+        AbilityDef::triggered(
+            "Whenever you cast your first noncreature spell each turn, empower Jace 1. (Put a \
+             loyalty counter on a Jace token you control. If you don't control one, first \
+             create a blue Jace planeswalker token with \"[−1]: Surveil 1\" and \
+             \"[−3]: Draw a card.\")",
+            // "Your first" is part of the event, fixed as the spell is cast: a second
+            // noncreature spell cast in response does not take this trigger back.
+            TriggerEventDef::While {
+                event: &TriggerEventDef::spell_cast(ObjectPredicateDef::All(&[
+                    ObjectPredicateDef::NoncreatureSpell,
+                    ObjectPredicateDef::ControlledBy(PlayerRelation::You),
+                ])),
+                condition: &TriggerConditionDef::ValueComparison(&ValueComparisonDef {
+                    left: ValueDef::CountSpellsCastThisTurn(&SpellCastQueryDef {
+                        player: PlayerRelation::You,
+                        spell: ObjectPredicateDef::NoncreatureSpell,
+                    }),
+                    comparison: ComparisonDef::Equal,
+                    right: ValueDef::Constant(1),
+                }),
+            },
+            empower_jace(ValueDef::Constant(1)),
+        ),
+    ]),
 );
 
 // FRA 36 — Precise Redaction
@@ -339,12 +688,25 @@ pub(in crate::card::sets) static PRECISE_REDACTION: CardRecord = CardRecord::new
 );
 
 // FRA 37 — Protege's Awakening
-// Audit: unsupported — Card rules have not been implemented.
 pub(in crate::card::sets) static PROTEGE_S_AWAKENING: CardRecord = CardRecord::new(
     "Protege's Awakening",
     "a08c7ec2-4c6a-4db2-85a7-41afe8731523",
     "Cynthia Sheppard",
-    CardRules::unsupported(),
+    CardRules::new_sorcery(mana_cost!("{3}{U}")).with_abilities(&[
+        AbilityDef::spell(
+            "Empower Jace 6. (Put six loyalty counters on a Jace token you control. If you \
+                don't control one, first create a blue Jace planeswalker token with \
+                \"[−1]: Surveil 1\" and \"[−3]: Draw a card.\")",
+            empower_jace(ValueDef::Constant(6)),
+        ),
+        AbilityDef::spell(
+            "Draw a card.",
+            EffectDef::DrawCards {
+                recipient: EffectRecipientDef::Controller,
+                amount: ValueDef::Constant(1),
+            },
+        ),
+    ]),
 );
 
 // FRA 38 — Seasoned Cryomancer
@@ -395,12 +757,34 @@ pub(in crate::card::sets) static THE_THEORIST_JACE_BELEREN: CardRecord = CardRec
 );
 
 // FRA 44 — Theorist's Proxy
-// Audit: unsupported — Card rules have not been implemented.
 pub(in crate::card::sets) static THEORIST_S_PROXY: CardRecord = CardRecord::new(
     "Theorist's Proxy",
     "710302ca-c4be-4069-8ce1-f531414c74e9",
     "Matt Stewart",
-    CardRules::unsupported(),
+    CardRules::new_creature(mana_cost!("{1}{U}"), &["Illusion"], 0, 3).with_abilities(&[
+        abilities::flash(),
+        abilities::enters_trigger(
+            "When this creature enters, empower Jace 3. (Put three loyalty counters on a Jace \
+             token you control. If you don't control one, first create a blue Jace \
+             planeswalker token with \"[−1]: Surveil 1\" and \"[−3]: Draw a card.\")",
+            empower_jace(ValueDef::Constant(3)),
+        ),
+        AbilityDef::activated(
+            "{U}, Sacrifice this creature: The next spell you cast this turn can't be countered.",
+            &[CostDef::Mana(mana_cost!("{U}")), CostDef::SacrificeSource],
+            EffectDef::Apply {
+                recipient: EffectRecipientDef::Controller,
+                effect: AppliedEffectDef::Rule(AppliedRuleDef::PlayerRule(
+                    PlayerRuleDef::ApplyToMatchingSpell {
+                        object: ObjectPredicateDef::Any,
+                        effect: &AppliedEffectDef::Rule(AppliedRuleDef::CannotBeCountered),
+                    },
+                )),
+                duration: ResolvedEffectDurationDef::UntilEndOfTurn
+                    .or(ResolvedEffectDurationDef::UntilNextMatchingCast),
+            },
+        ),
+    ]),
 );
 
 // FRA 45 — Undulating Witness
@@ -510,12 +894,29 @@ pub(in crate::card::sets) static MULTIPLY_BY_ZERO: CardRecord = CardRecord::new(
 );
 
 // FRA 59 — Overwrite the Multiverse
-// Audit: unsupported — Card rules have not been implemented.
 pub(in crate::card::sets) static OVERWRITE_THE_MULTIVERSE: CardRecord = CardRecord::new(
     "Overwrite the Multiverse",
     "c4554f5b-791b-48f6-bf54-ad28699e1beb",
     "Ryan Pancoast",
-    CardRules::unsupported(),
+    CardRules::new_sorcery(mana_cost!("{4}{B}{B}")).with_ability(AbilityDef::spell(
+        "Exile all creatures. Empower Jace X, where X is the number of creatures exiled this \
+         way. (Put that many loyalty counters on a Jace token you control. If you don't control \
+         one, first create a blue Jace planeswalker token with \"[−1]: Surveil 1\" and \
+         \"[−3]: Draw a card.\")",
+        EffectDef::WithZoneMoveResult {
+            effect: &EffectDef::move_to_zone(
+                EffectRecipientDef::matching_objects(
+                    ObjectPredicateDef::HasType(CardType::Creature),
+                    &[ZoneKind::Battlefield],
+                    PlayerRelation::Any,
+                ),
+                ZoneKind::Exile,
+                ZonePlacement::Top,
+            ),
+            binding: Binding!("overwritten"),
+            then: &empower_jace(ValueDef::BoundObjectCount(Binding!("overwritten"))),
+        },
+    )),
 );
 
 // FRA 60 — Rampart Hunter
@@ -537,12 +938,41 @@ pub(in crate::card::sets) static RANK_RAT: CardRecord = CardRecord::new(
 );
 
 // FRA 62 — Rewrite Regrets
-// Audit: unsupported — Card rules have not been implemented.
 pub(in crate::card::sets) static REWRITE_REGRETS: CardRecord = CardRecord::new(
     "Rewrite Regrets",
     "453cfde7-c460-4b55-9472-b714e16f24bb",
     "Matt Stewart",
-    CardRules::unsupported(),
+    CardRules::new_sorcery(mana_cost!("{3}{B}")).with_abilities(&[
+        AbilityDef::spell_with_targets(
+            "Return target creature or planeswalker card with mana value 6 or less from your \
+             graveyard to the battlefield.",
+            &[AbilityTargetDef::exactly_one(
+                AbilityTargetPredicate::Object {
+                    object: ObjectPredicateDef::All(&[
+                        ObjectPredicateDef::AnyOf(&[
+                            ObjectPredicateDef::HasType(CardType::Creature),
+                            ObjectPredicateDef::HasType(CardType::Planeswalker),
+                        ]),
+                        ObjectPredicateDef::ManaValueAtMost(6),
+                    ]),
+                    zones: &[ZoneKind::Graveyard],
+                    controller: None,
+                    owner: Some(PlayerRelation::You),
+                },
+            )],
+            EffectDef::move_to_zone(
+                EffectRecipientDef::Target(TargetIndex::PRIMARY),
+                ZoneKind::Battlefield,
+                ZonePlacement::Top,
+            ),
+        ),
+        AbilityDef::spell(
+            "Empower Jace 2. (Put two loyalty counters on a Jace token you control. If you \
+             don't control one, first create a blue Jace planeswalker token with \
+             \"[−1]: Surveil 1\" and \"[−3]: Draw a card.\")",
+            empower_jace(ValueDef::Constant(2)),
+        ),
+    ]),
 );
 
 // FRA 63 — Rise of the Deathbringer
@@ -583,12 +1013,39 @@ pub(in crate::card::sets) static SILENCE_THE_ECHO: CardRecord = CardRecord::new(
 );
 
 // FRA 67 — Solve for Disappointment
-// Audit: unsupported — Card rules have not been implemented.
 pub(in crate::card::sets) static SOLVE_FOR_DISAPPOINTMENT: CardRecord = CardRecord::new(
     "Solve for Disappointment",
     "7beaa8c9-1a2c-4c88-b579-91e371d8d9e3",
     "Eli Minaya",
-    CardRules::unsupported(),
+    CardRules::new_sorcery(mana_cost!("{1}{B}")).with_abilities(&[
+        AbilityDef::spell_with_targets(
+            "Target opponent reveals their hand. You choose a nonland permanent card from it. \
+             That player discards that card.",
+            &[AbilityTargetDef::exactly_one(
+                AbilityTargetPredicate::Player(PlayerRelation::Opponent),
+            )],
+            EffectDef::Sequence(&abilities::reveal_hand_and_discard_chosen_card(
+                PlayerRefDef::Target(TargetIndex::PRIMARY),
+                // A permanent card that is not a land. An artifact land is a permanent
+                // card and still a land.
+                ObjectPredicateDef::All(&[
+                    ObjectPredicateDef::AnyOf(&[
+                        ObjectPredicateDef::HasType(CardType::Artifact),
+                        ObjectPredicateDef::HasType(CardType::Creature),
+                        ObjectPredicateDef::HasType(CardType::Enchantment),
+                        ObjectPredicateDef::HasType(CardType::Planeswalker),
+                    ]),
+                    ObjectPredicateDef::Not(&ObjectPredicateDef::HasType(CardType::Land)),
+                ]),
+            )),
+        ),
+        AbilityDef::spell(
+            "Empower Jace 1. (Put a loyalty counter on a Jace token you control. If you \
+             don't control one, first create a blue Jace planeswalker token with \
+             \"[−1]: Surveil 1\" and \"[−3]: Draw a card.\")",
+            empower_jace(ValueDef::Constant(1)),
+        ),
+    ]),
 );
 
 // FRA 68 — Terminal Criticism
@@ -610,12 +1067,43 @@ pub(in crate::card::sets) static THEORETICAL_NECROMANCER: CardRecord = CardRecor
 );
 
 // FRA 71 — Vraska's Final Mercy
-// Audit: unsupported — Card rules have not been implemented.
 pub(in crate::card::sets) static VRASKA_S_FINAL_MERCY: CardRecord = CardRecord::new(
     "Vraska's Final Mercy",
     "992bd991-7cfb-459f-bafd-9a44f3c925c5",
     "Magali Villeneuve",
-    CardRules::unsupported(),
+    CardRules::new_sorcery(mana_cost!("{B}{B}")).with_ability(AbilityDef::modal_spell(
+        "Choose one —",
+        &[
+            AbilityDef::spell_with_targets(
+                "You lose 2 life. Destroy target creature or planeswalker.",
+                &[AbilityTargetDef::exactly_one_permanent(
+                    ObjectPredicateDef::AnyOf(&[
+                        ObjectPredicateDef::HasType(CardType::Creature),
+                        ObjectPredicateDef::HasType(CardType::Planeswalker),
+                    ]),
+                )],
+                EffectDef::Sequence(&[
+                    EffectDef::LoseLife {
+                        recipient: EffectRecipientDef::Controller,
+                        amount: ValueDef::Constant(2),
+                    },
+                    EffectDef::destroy_target(TargetIndex::PRIMARY),
+                ]),
+            ),
+            AbilityDef::spell(
+                "You lose 2 life. Empower Jace 6. (Put six loyalty counters on a Jace token \
+                 you control. If you don't control one, first create a blue Jace planeswalker \
+                 token with \"[−1]: Surveil 1\" and \"[−3]: Draw a card.\")",
+                EffectDef::Sequence(&[
+                    EffectDef::LoseLife {
+                        recipient: EffectRecipientDef::Controller,
+                        amount: ValueDef::Constant(2),
+                    },
+                    empower_jace(ValueDef::Constant(6)),
+                ]),
+            ),
+        ],
+    )),
 );
 
 // FRA 72 — Ajani's Anguish
@@ -764,12 +1252,28 @@ pub(in crate::card::sets) static MASTER_OF_BARBS: CardRecord = CardRecord::new(
 );
 
 // FRA 89 — No Admittance
-// Audit: unsupported — Card rules have not been implemented.
 pub(in crate::card::sets) static NO_ADMITTANCE: CardRecord = CardRecord::new(
     "No Admittance",
     "11ba4fdd-cc03-4bb6-a493-91a9785771d0",
     "Serena Malyon",
-    CardRules::unsupported(),
+    CardRules::new_sorcery(mana_cost!("{1}{R}")).with_abilities(&[
+        AbilityDef::spell_with_targets(
+            "No Admittance deals 3 damage to any target.",
+            &[AbilityTargetDef::exactly_one(
+                AbilityTargetPredicate::AnyTarget,
+            )],
+            EffectDef::damage(
+                EffectRecipientDef::Target(TargetIndex::PRIMARY),
+                ValueDef::Constant(3),
+            ),
+        ),
+        AbilityDef::spell(
+            "Empower Jace 1. (Put a loyalty counter on a Jace token you control. If you \
+             don't control one, first create a blue Jace planeswalker token with \
+             \"[−1]: Surveil 1\" and \"[−3]: Draw a card.\")",
+            empower_jace(ValueDef::Constant(1)),
+        ),
+    ]),
 );
 
 // FRA 92 — Skilled Battlecarver
@@ -818,12 +1322,19 @@ pub(in crate::card::sets) static WRATH_OF_THE_BLOODMANE: CardRecord = CardRecord
 );
 
 // FRA 97 — Arcane Amphisbaena
-// Audit: unsupported — Card rules have not been implemented.
 pub(in crate::card::sets) static ARCANE_AMPHISBAENA: CardRecord = CardRecord::new(
     "Arcane Amphisbaena",
     "1bf923c4-f0b7-4271-978c-fd2e79fe1cc8",
     "Jason Mowry",
-    CardRules::unsupported(),
+    CardRules::new_creature(mana_cost!("{1}{G}"), &["Snake"], 1, 1).with_abilities(&[
+        abilities::deathtouch(),
+        abilities::enters_trigger(
+            "When this creature enters, empower Jace 2. (Put two loyalty counters on a Jace \
+             token you control. If you don't control one, first create a blue Jace \
+             planeswalker token with \"[−1]: Surveil 1\" and \"[−3]: Draw a card.\")",
+            empower_jace(ValueDef::Constant(2)),
+        ),
+    ]),
 );
 
 // FRA 98 — Bestial Incursion
@@ -1032,12 +1543,46 @@ pub(in crate::card::sets) static AERID_KONSTRARI: CardRecord = CardRecord::new(
 );
 
 // FRA 122 — Avatar of Burgeoning Echoes
-// Audit: unsupported — Card rules have not been implemented.
 pub(in crate::card::sets) static AVATAR_OF_BURGEONING_ECHOES: CardRecord = CardRecord::new(
     "Avatar of Burgeoning Echoes",
     "5905995b-7a20-4602-a7cc-90aa5089a082",
     "Eli Minaya",
-    CardRules::unsupported(),
+    CardRules::new_creature(mana_cost!("{G}{U}"), &["Avatar"], 2, 3).with_abilities(&[
+        AbilityDef::triggered(
+            "Landfall — Whenever a land you control enters, empower Jace 2. (Put two loyalty \
+             counters on a Jace token you control. If you don't control one, first create a \
+             blue Jace planeswalker token with \"[−1]: Surveil 1\" and \"[−3]: Draw a card.\")",
+            TriggerEventDef::zone_changed(
+                ObjectPredicateDef::All(&[
+                    ObjectPredicateDef::HasType(CardType::Land),
+                    ObjectPredicateDef::ControlledBy(PlayerRelation::You),
+                ]),
+                None,
+                Some(ZoneKind::Battlefield),
+            ),
+            empower_jace(ValueDef::Constant(2)),
+        ),
+        planeswalkers_you_control_have(
+            "Planeswalkers you control have \"[−10]: Put a +1/+1 counter on target creature \
+             for each land you control.\"",
+            &AbilityDef::activated_with_targets(
+                "−10: Put a +1/+1 counter on target creature for each land you control.",
+                &[CostDef::Loyalty(ValueDef::Constant(-10))],
+                &[AbilityTargetDef::exactly_one_permanent(
+                    ObjectPredicateDef::HasType(CardType::Creature),
+                )],
+                EffectDef::AddCounters {
+                    object: EffectRecipientDef::Target(TargetIndex::PRIMARY),
+                    kind: CounterKind::PlusOnePlusOne,
+                    amount: ValueDef::CountMatchingObjects(&ObjectQueryDef::controlled_by(
+                        ObjectPredicateDef::HasType(CardType::Land),
+                        &[ZoneKind::Battlefield],
+                        PlayerSetDef::Related(PlayerRelation::You),
+                    )),
+                },
+            ),
+        ),
+    ]),
 );
 
 // FRA 123 — Blessed Ghoul
@@ -1116,12 +1661,66 @@ pub(in crate::card::sets) static ENTRUST_THE_SPARK: CardRecord = CardRecord::new
 );
 
 // FRA 132 — Fatehold Charm
-// Audit: unsupported — Card rules have not been implemented.
 pub(in crate::card::sets) static FATEHOLD_CHARM: CardRecord = CardRecord::new(
     "Fatehold Charm",
     "cfc54011-647e-4428-bcdb-59400e1da49d",
     "Rovina Cai",
-    CardRules::unsupported(),
+    CardRules::new_instant(mana_cost!("{W}{U}")).with_ability(AbilityDef::modal_spell(
+        "Choose one —",
+        &[
+            AbilityDef::spell(
+                "Draw a card. Empower Jace 2.",
+                EffectDef::Sequence(&[
+                    EffectDef::DrawCards {
+                        recipient: EffectRecipientDef::Controller,
+                        amount: ValueDef::Constant(1),
+                    },
+                    empower_jace(ValueDef::Constant(2)),
+                ]),
+            ),
+            AbilityDef::spell_with_targets(
+                "Return target spell or creature to its owner's hand.",
+                &[AbilityTargetDef::exactly_one(
+                    AbilityTargetPredicate::AnyOf(&[
+                        AbilityTargetPredicate::Object {
+                            object: ObjectPredicateDef::Spell,
+                            zones: &[ZoneKind::Stack],
+                            controller: None,
+                            owner: None,
+                        },
+                        AbilityTargetPredicate::Object {
+                            object: ObjectPredicateDef::HasType(CardType::Creature),
+                            zones: &[ZoneKind::Battlefield],
+                            controller: None,
+                            owner: None,
+                        },
+                    ]),
+                )],
+                EffectDef::move_to_zone(
+                    EffectRecipientDef::Target(TargetIndex::PRIMARY),
+                    ZoneKind::Hand,
+                    ZonePlacement::Top,
+                ),
+            ),
+            AbilityDef::spell(
+                "Creatures you control get +1/+2 until end of turn.",
+                EffectDef::Apply {
+                    recipient: EffectRecipientDef::objects(ObjectSetDef::Query(
+                        ObjectQueryDef::matching(
+                            ObjectPredicateDef::HasType(CardType::Creature),
+                            &[ZoneKind::Battlefield],
+                            PlayerRelation::You,
+                        ),
+                    )),
+                    effect: AppliedEffectDef::modify_power_toughness(
+                        ValueDef::Constant(1),
+                        ValueDef::Constant(2),
+                    ),
+                    duration: ResolvedEffectDurationDef::UntilEndOfTurn,
+                },
+            ),
+        ],
+    )),
 );
 
 // FRA 134 — Ferocity of the Hunt
@@ -1263,12 +1862,43 @@ pub(in crate::card::sets) static STINGING_VITRIOL: CardRecord = CardRecord::new(
 );
 
 // FRA 153 — Tam's Resistance
-// Audit: unsupported — Card rules have not been implemented.
 pub(in crate::card::sets) static TAM_S_RESISTANCE: CardRecord = CardRecord::new(
     "Tam's Resistance",
     "b3d33df2-a77b-4c2e-ba7f-2cc9c1505f9b",
     "Samuel Perin",
-    CardRules::unsupported(),
+    CardRules::new_sorcery(mana_cost!("{1}{G/U}")).with_abilities(&[
+        AbilityDef::spell_with_targets(
+            "Put a +1/+1 counter on up to one target creature. It gains vigilance until end \
+             of turn.",
+            &[AbilityTargetDef::up_to(
+                AbilityTargetPredicate::Object {
+                    object: ObjectPredicateDef::HasType(CardType::Creature),
+                    zones: &[ZoneKind::Battlefield],
+                    controller: None,
+                    owner: None,
+                },
+                1,
+            )],
+            EffectDef::Sequence(&[
+                EffectDef::AddCounters {
+                    object: EffectRecipientDef::Target(TargetIndex::PRIMARY),
+                    kind: CounterKind::PlusOnePlusOne,
+                    amount: ValueDef::Constant(1),
+                },
+                EffectDef::Apply {
+                    recipient: EffectRecipientDef::Target(TargetIndex::PRIMARY),
+                    effect: AppliedEffectDef::add_ability(&abilities::vigilance()),
+                    duration: ResolvedEffectDurationDef::UntilEndOfTurn,
+                },
+            ]),
+        ),
+        AbilityDef::spell(
+            "Empower Jace 4. (Put four loyalty counters on a Jace token you control. If you \
+             don't control one, first create a blue Jace planeswalker token with \
+             \"[−1]: Surveil 1\" and \"[−3]: Draw a card.\")",
+            empower_jace(ValueDef::Constant(4)),
+        ),
+    ]),
 );
 
 // FRA 154 — Tenured Tethermage
@@ -1390,12 +2020,18 @@ pub(in crate::card::sets) static EYE_OF_JACE: CardRecord = CardRecord::new(
 );
 
 // FRA 171 — Keeper of the Quiet Hour
-// Audit: unsupported — Card rules have not been implemented.
 pub(in crate::card::sets) static KEEPER_OF_THE_QUIET_HOUR: CardRecord = CardRecord::new(
     "Keeper of the Quiet Hour",
     "b6331218-dbb8-44a9-8ba5-5fb1ab41c5c0",
     "John Tedrick",
-    CardRules::unsupported(),
+    CardRules::new_artifact_creature(mana_cost!("{3}"), &["Chimera"], 3, 2).with_ability(
+        abilities::enters_trigger(
+            "When this creature enters, empower Jace 2. (Put two loyalty counters on a Jace \
+             token you control. If you don't control one, first create a blue Jace \
+             planeswalker token with \"[−1]: Surveil 1\" and \"[−3]: Draw a card.\")",
+            empower_jace(ValueDef::Constant(2)),
+        ),
+    ),
 );
 
 // FRA 172 — Living Library
@@ -1706,21 +2342,63 @@ pub(in crate::card::sets) static TOMIK_ORZHOV_LAWMAGE: CardRecord = CardRecord::
 );
 
 // FRA 207 — Way of the Healer
-// Audit: unsupported — Card rules have not been implemented.
 pub(in crate::card::sets) static WAY_OF_THE_HEALER: CardRecord = CardRecord::new(
     "Way of the Healer",
     "50326a2a-7e10-464b-a97e-e880bda0558c",
     "Pauline Voss",
-    CardRules::unsupported(),
+    CardRules::new_enchantment(mana_cost!("{3}{W}"))
+        .with_supertype(CardSupertype::Legendary)
+        .with_abilities(&[
+            abilities::enters_trigger(
+                "When Way of the Healer enters, empower Jace 5. (Put five loyalty counters on \
+                 a Jace token you control. If you don't control one, first create a blue Jace \
+                 planeswalker token with \"[−1]: Surveil 1\" and \"[−3]: Draw a card.\")",
+                empower_jace(ValueDef::Constant(5)),
+            ),
+            planeswalkers_you_control_have(
+                "Planeswalkers you control have \"[−2]: Create a 2/2 colorless Wizard Soldier \
+                 creature token named Cadet. Surveil 1.\"",
+                &AbilityDef::activated(
+                    "−2: Create a 2/2 colorless Wizard Soldier creature token named Cadet. \
+                     Surveil 1.",
+                    &[CostDef::Loyalty(ValueDef::Constant(-2))],
+                    EffectDef::Sequence(&[
+                        EffectDef::CreateToken(CreateTokenDef::new(TokenDef::Literal(CADET_TOKEN))),
+                        abilities::surveil(ValueDef::Constant(1)),
+                    ]),
+                ),
+            ),
+        ]),
 );
 
 // FRA 208 — Way of the Mentor
-// Audit: unsupported — Card rules have not been implemented.
 pub(in crate::card::sets) static WAY_OF_THE_MENTOR: CardRecord = CardRecord::new(
     "Way of the Mentor",
     "1a59d5b1-12d6-486b-bd29-ca371359addd",
     "Danny Schwartz",
-    CardRules::unsupported(),
+    CardRules::new_enchantment(mana_cost!("{2}{W}"))
+        .with_supertype(CardSupertype::Legendary)
+        .with_abilities(&[
+            abilities::enters_trigger(
+                "When Way of the Mentor enters, empower Jace 5. (Put five loyalty counters on \
+                 a Jace token you control. If you don't control one, first create a blue Jace \
+                 planeswalker token with \"[−1]: Surveil 1\" and \"[−3]: Draw a card.\")",
+                empower_jace(ValueDef::Constant(5)),
+            ),
+            AbilityDef::triggered(
+                "Whenever you gain life, put a loyalty counter on each planeswalker you control.",
+                TriggerEventDef::LifeGained(PlayerRelation::You),
+                EffectDef::AddCounters {
+                    object: EffectRecipientDef::matching_objects(
+                        ObjectPredicateDef::HasType(CardType::Planeswalker),
+                        &[ZoneKind::Battlefield],
+                        PlayerRelation::You,
+                    ),
+                    kind: CounterKind::Loyalty,
+                    amount: ValueDef::Constant(1),
+                },
+            ),
+        ]),
 );
 
 // FRA 209 — Yoshimaru, Beloved Companion
@@ -1789,12 +2467,88 @@ pub(in crate::card::sets) static HAPATRA_THE_DESERT_FROST: CardRecord = CardReco
 );
 
 // FRA 216 — Jace, Reality Sculptor
-// Audit: unsupported — Card rules have not been implemented.
 pub(in crate::card::sets) static JACE_REALITY_SCULPTOR: CardRecord = CardRecord::new(
     "Jace, Reality Sculptor",
     "74087795-0b38-4fd2-9841-147583baca41",
     "Martina Fačková",
-    CardRules::unsupported(),
+    CardRules::new_planeswalker(mana_cost!("{3}{U}{U}"), &["Jace"], 5)
+        .with_supertype(CardSupertype::Legendary)
+        .with_abilities(&[
+            AbilityDef::activated(
+                "+1: Empower Jace X, where X is the number of Islands you control.",
+                &[CostDef::Loyalty(ValueDef::Constant(1))],
+                empower_jace(ValueDef::CountMatchingObjects(
+                    &ObjectQueryDef::controlled_by(
+                        ObjectPredicateDef::Subtype(SubtypeDef::from_name("Island")),
+                        &[ZoneKind::Battlefield],
+                        PlayerSetDef::Related(PlayerRelation::You),
+                    ),
+                )),
+            ),
+            AbilityDef::activated(
+                "−3: Until your next turn, whenever a creature attacks you or a planeswalker \
+                 you control, it gets -5/-0 until end of turn.",
+                &[CostDef::Loyalty(ValueDef::Constant(-3))],
+                EffectDef::InstallTrigger(InstalledTriggerDef {
+                    ability: &AbilityDef::triggered(
+                        "Whenever a creature attacks you or a planeswalker you control, it gets \
+                         -5/-0 until end of turn.",
+                        TriggerEventDef::Attacks(AttackEventMatcherDef::attacking(
+                            ObjectPredicateDef::HasType(CardType::Creature),
+                            PlayerRelation::You,
+                        )),
+                        EffectDef::Apply {
+                            recipient: EffectRecipientDef::TriggeringObject,
+                            effect: AppliedEffectDef::modify_power_toughness(
+                                ValueDef::Constant(-5),
+                                ValueDef::Constant(0),
+                            ),
+                            duration: ResolvedEffectDurationDef::UntilEndOfTurn,
+                        },
+                    ),
+                    lifetime: InstalledTriggerLifetimeDef::UntilNextTurn(
+                        PlayerRefDef::EffectController,
+                    ),
+                }),
+            ),
+            AbilityDef::activated(
+                "0: Exile all but the bottom card of each opponent's library. Activate only if \
+                 there are twenty-five or more loyalty counters among Jaces you control.",
+                &[CostDef::Loyalty(ValueDef::Constant(0))],
+                // Everything above the bottom card: one fewer than the library holds, from
+                // the top. An empty library has nothing above its bottom card.
+                abilities::bind_top_cards_then(
+                    PlayerRefDef::Opponent,
+                    ValueDef::Sum(&SumValueDef::new(
+                        ValueDef::LibrarySize(PlayerRelation::Opponent),
+                        ValueDef::Constant(-1),
+                    )),
+                    &EffectDef::MoveObjects(MoveObjectsDef {
+                        input: ObjectSetDef::Binding(ParentBinding),
+                        from: Some(ZoneKind::Library),
+                        zone: ZoneKind::Exile,
+                        placement: ZonePlacement::Top,
+                        moved: None,
+                        then: &EffectDef::None,
+                    }),
+                ),
+            )
+            .with_activation_condition(&TriggerConditionDef::ValueComparison(
+                &ValueComparisonDef {
+                    left: ValueDef::AggregateObjectValues(&ObjectValueAggregateDef {
+                        objects: ObjectSetDef::Query(ObjectQueryDef::controlled_by(
+                            ObjectPredicateDef::Subtype(SubtypeDef::from_name("Jace")),
+                            &[ZoneKind::Battlefield],
+                            PlayerSetDef::Related(PlayerRelation::You),
+                        )),
+                        select: ObjectValueDef::Counters(CounterKind::Loyalty),
+                        operation: AggregateOperationDef::Sum,
+                    }),
+                    comparison: ComparisonDef::GreaterOrEqual,
+                    right: ValueDef::Constant(25),
+                },
+            )),
+        ]),
 );
 
 // FRA 217 — Lyra, Tolarian Archangel
@@ -1992,21 +2746,76 @@ pub(in crate::card::sets) static TINYBONES_POCKET_NUISANCE: CardRecord = CardRec
 );
 
 // FRA 238 — Way of the Deathbringer
-// Audit: unsupported — Card rules have not been implemented.
 pub(in crate::card::sets) static WAY_OF_THE_DEATHBRINGER: CardRecord = CardRecord::new(
     "Way of the Deathbringer",
     "12dd46b2-e892-4660-b120-55766fd4d878",
     "Joshua Raphael",
-    CardRules::unsupported(),
+    CardRules::new_enchantment(mana_cost!("{2}{B}"))
+        .with_supertype(CardSupertype::Legendary)
+        .with_abilities(&[
+            abilities::enters_trigger(
+                "When Way of the Deathbringer enters, empower Jace 5. (Put five loyalty \
+                 counters on a Jace token you control. If you don't control one, first create \
+                 a blue Jace planeswalker token with \"[−1]: Surveil 1\" and \
+                 \"[−3]: Draw a card.\")",
+                empower_jace(ValueDef::Constant(5)),
+            ),
+            planeswalkers_you_control_have(
+                "Planeswalkers you control have \"[−2]: You may sacrifice a creature. If you \
+                 do, create a 4/4 green Beast creature token with trample.\"",
+                &AbilityDef::activated(
+                    "−2: You may sacrifice a creature. If you do, create a 4/4 green Beast \
+                     creature token with trample.",
+                    &[CostDef::Loyalty(ValueDef::Constant(-2))],
+                    EffectDef::PayOr(PayOrDef::optional(
+                        &[CostDef::sacrifice_permanent(ObjectPredicateDef::HasType(
+                            CardType::Creature,
+                        ))],
+                        &EffectDef::CreateToken(CreateTokenDef::new(TokenDef::Literal(
+                            BEAST_TOKEN,
+                        ))),
+                    )),
+                ),
+            ),
+        ]),
 );
 
 // FRA 239 — Way of the Necromancer
-// Audit: unsupported — Card rules have not been implemented.
 pub(in crate::card::sets) static WAY_OF_THE_NECROMANCER: CardRecord = CardRecord::new(
     "Way of the Necromancer",
     "a0ff9689-ea49-4fff-b37c-4abbaeb0f73d",
     "Pauline Voss",
-    CardRules::unsupported(),
+    CardRules::new_enchantment(mana_cost!("{1}{B}"))
+        .with_supertype(CardSupertype::Legendary)
+        .with_abilities(&[
+            abilities::enters_trigger(
+                "When Way of the Necromancer enters, empower Jace 2. (Put two loyalty counters \
+                 on a Jace token you control. If you don't control one, first create a blue \
+                 Jace planeswalker token with \"[−1]: Surveil 1\" and \"[−3]: Draw a card.\")",
+                empower_jace(ValueDef::Constant(2)),
+            ),
+            AbilityDef::triggered(
+                "Whenever a creature you control dies, put a loyalty counter on each \
+                 planeswalker you control.",
+                TriggerEventDef::zone_changed(
+                    ObjectPredicateDef::All(&[
+                        ObjectPredicateDef::HasType(CardType::Creature),
+                        ObjectPredicateDef::ControlledBy(PlayerRelation::You),
+                    ]),
+                    Some(ZoneKind::Battlefield),
+                    Some(ZoneKind::Graveyard),
+                ),
+                EffectDef::AddCounters {
+                    object: EffectRecipientDef::matching_objects(
+                        ObjectPredicateDef::HasType(CardType::Planeswalker),
+                        &[ZoneKind::Battlefield],
+                        PlayerRelation::You,
+                    ),
+                    kind: CounterKind::Loyalty,
+                    amount: ValueDef::Constant(1),
+                },
+            ),
+        ]),
 );
 
 // FRA 240 — Winter, Tormented Loner
@@ -2134,21 +2943,83 @@ pub(in crate::card::sets) static TOMIK_IZZET_SPARKMAGE: CardRecord = CardRecord:
 );
 
 // FRA 254 — Way of the Pyromancer
-// Audit: unsupported — Card rules have not been implemented.
 pub(in crate::card::sets) static WAY_OF_THE_PYROMANCER: CardRecord = CardRecord::new(
     "Way of the Pyromancer",
     "c1a00020-7c14-4503-a057-5763704bb83e",
     "Andrey Kuzinskiy",
-    CardRules::unsupported(),
+    CardRules::new_enchantment(mana_cost!("{1}{R}"))
+        .with_supertype(CardSupertype::Legendary)
+        .with_abilities(&[
+            abilities::enters_trigger(
+                "When Way of the Pyromancer enters, empower Jace 2. (Put two loyalty counters \
+                 on a Jace token you control. If you don't control one, first create a blue \
+                 Jace planeswalker token with \"[−1]: Surveil 1\" and \"[−3]: Draw a card.\")",
+                empower_jace(ValueDef::Constant(2)),
+            ),
+            planeswalkers_you_control_have(
+                "Planeswalkers you control have \"[+1]: Add {R}.\"",
+                // Not a mana ability: a loyalty ability never is (CR 605.1a), so this
+                // one uses the stack.
+                &AbilityDef::activated(
+                    "+1: Add {R}.",
+                    &[CostDef::Loyalty(ValueDef::Constant(1))],
+                    EffectDef::AddMana(AddManaEffectDef::one(ManaColor::Red)),
+                ),
+            ),
+        ]),
 );
 
 // FRA 255 — Way of the Warlord
-// Audit: unsupported — Card rules have not been implemented.
 pub(in crate::card::sets) static WAY_OF_THE_WARLORD: CardRecord = CardRecord::new(
     "Way of the Warlord",
     "6d86e410-20c4-4248-96bf-5780ece6274a",
     "Danny Schwartz",
-    CardRules::unsupported(),
+    CardRules::new_enchantment(mana_cost!("{2}{R}"))
+        .with_supertype(CardSupertype::Legendary)
+        .with_abilities(&[
+            abilities::enters_trigger(
+                "When Way of the Warlord enters, empower Jace 5. (Put five loyalty counters on \
+                 a Jace token you control. If you don't control one, first create a blue Jace \
+                 planeswalker token with \"[−1]: Surveil 1\" and \"[−3]: Draw a card.\")",
+                empower_jace(ValueDef::Constant(5)),
+            ),
+            planeswalkers_you_control_have(
+                "Planeswalkers you control have \"[−4]: This planeswalker deals 2 damage to up \
+                 to one target creature or planeswalker and 2 damage to target player.\"",
+                &AbilityDef::activated_with_targets(
+                    "−4: This planeswalker deals 2 damage to up to one target creature or \
+                     planeswalker and 2 damage to target player.",
+                    &[CostDef::Loyalty(ValueDef::Constant(-4))],
+                    &[
+                        AbilityTargetDef::up_to(
+                            AbilityTargetPredicate::Object {
+                                object: ObjectPredicateDef::AnyOf(&[
+                                    ObjectPredicateDef::HasType(CardType::Creature),
+                                    ObjectPredicateDef::HasType(CardType::Planeswalker),
+                                ]),
+                                zones: &[ZoneKind::Battlefield],
+                                controller: None,
+                                owner: None,
+                            },
+                            1,
+                        ),
+                        AbilityTargetDef::exactly_one(AbilityTargetPredicate::Player(
+                            PlayerRelation::Any,
+                        )),
+                    ],
+                    EffectDef::damage_simultaneously(&[
+                        DamageAssignmentDef::from_effect(
+                            EffectRecipientDef::Target(TargetIndex::PRIMARY),
+                            ValueDef::Constant(2),
+                        ),
+                        DamageAssignmentDef::from_effect(
+                            EffectRecipientDef::Target(TargetIndex(1)),
+                            ValueDef::Constant(2),
+                        ),
+                    ]),
+                ),
+            ),
+        ]),
 );
 
 // FRA 256 — Winter, Team Player
@@ -2262,12 +3133,30 @@ pub(in crate::card::sets) static WAY_OF_THE_PARADOX: CardRecord = CardRecord::ne
 );
 
 // FRA 268 — Way of the Wildspeaker
-// Audit: unsupported — Card rules have not been implemented.
 pub(in crate::card::sets) static WAY_OF_THE_WILDSPEAKER: CardRecord = CardRecord::new(
     "Way of the Wildspeaker",
     "a252cb01-537b-4afe-9abc-81a98c4a1439",
     "Joshua Raphael",
-    CardRules::unsupported(),
+    CardRules::new_enchantment(mana_cost!("{4}{G}"))
+        .with_supertype(CardSupertype::Legendary)
+        .with_abilities(&[
+            abilities::enters_trigger(
+                "When Way of the Wildspeaker enters, empower Jace 7. (Put seven loyalty \
+                 counters on a Jace token you control. If you don't control one, first create \
+                 a blue Jace planeswalker token with \"[−1]: Surveil 1\" and \
+                 \"[−3]: Draw a card.\")",
+                empower_jace(ValueDef::Constant(7)),
+            ),
+            planeswalkers_you_control_have(
+                "Planeswalkers you control have \"[−4]: Create a 4/4 green Beast creature \
+                 token with trample.\"",
+                &AbilityDef::activated(
+                    "−4: Create a 4/4 green Beast creature token with trample.",
+                    &[CostDef::Loyalty(ValueDef::Constant(-4))],
+                    EffectDef::CreateToken(CreateTokenDef::new(TokenDef::Literal(BEAST_TOKEN))),
+                ),
+            ),
+        ]),
 );
 
 // FRA 269 — Yoshimaru, Scrappy Stray

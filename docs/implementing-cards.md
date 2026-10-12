@@ -841,6 +841,59 @@ hold these rulings as regression tests; the former runs every case in both
 engine modes. A new preparation card needs a card-level test only for
 what its own clauses add.
 
+## Empower Jace
+
+Empower Jace N (CR 701.71) is a keyword action composed from ordinary effects.
+Use `sets::reality_fracture::empower_jace(amount)` wherever a clause says
+"empower Jace N", and keep the printed text and reminder text on that clause:
+
+```rust
+abilities::enters_trigger(
+    "When this creature enters, empower Jace 4. (Put four loyalty counters on a Jace \
+     token you control. If you don't control one, first create a blue Jace \
+     planeswalker token with \"[−1]: Surveil 1\" and \"[−3]: Draw a card.\")",
+    empower_jace(ValueDef::Constant(4)),
+)
+```
+
+The helper works out the amount, creates the token if you control no Jace
+planeswalker token, asks you to choose a Jace planeswalker token you control,
+and puts that many loyalty counters on it.
+
+- The amount is bound before the token is created, so "where X is the number
+  of ..." counts the board the instruction started from. Pass any `ValueDef`
+  the surrounding program can evaluate, including one read from an earlier
+  step: Overwrite the Multiverse wraps its exile in `WithZoneMoveResult` and
+  passes `ValueDef::BoundObjectCount` for "creatures exiled this way".
+- The choice is a characteristic query, not a list of tokens Empower made. Any
+  token that is a Jace planeswalker qualifies, including a token copy of a
+  nontoken Jace. A nontoken Jace never qualifies and does not stop the token
+  from being created.
+- The token has no printed loyalty and enters with none. Zero is safe only
+  until the counters land later in the same resolution, because state-based
+  actions are not checked in between. Empower Jace 0 creates a token that the
+  next state-based check puts into the graveyard (CR 704.5i).
+- Every Empower card creates the one `JACE_TOKEN` constant, whose abilities
+  are a single `static` array. Token identity compares the ability list by
+  address, so never declare a second Jace token inline: it would be a
+  different token.
+
+"Planeswalkers you control have '[cost]: ...'" uses the set's
+`planeswalkers_you_control_have(text, &ability)`, a `StaticApply` of
+`AppliedEffectDef::add_ability`. Give the granted ability a `CostDef::Loyalty`
+cost and it is a loyalty ability like the printed ones: it keeps loyalty
+timing, needs the loyalty it removes, and shares its planeswalker's one
+activation each turn (CR 606.3). One that adds mana is still
+`AbilityDef::activated`, never `activated_mana`; a loyalty ability uses the
+stack.
+
+`src/game/tests/empower_jace.rs` holds the Empower rulings and the granted
+loyalty limit as regression tests in both engine modes. A new Empower card
+needs a card-level test only for a value or condition it reads somewhere that
+file does not already cover: catalog validation can accept a value that an
+activation condition or event-time condition, which have no resolving object,
+evaluates as 0.
+
 ## Class level bars
 
 Use `sets::adventures_in_the_forgotten_realms::class_level!` inside

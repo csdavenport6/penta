@@ -191,6 +191,7 @@ mod dka_stale_audits;
 mod each_upkeep;
 mod eddymurk_crab;
 mod elder_spawn;
+mod empower_jace;
 mod empty_library_wins;
 mod emrakul;
 mod enchantment_engines;

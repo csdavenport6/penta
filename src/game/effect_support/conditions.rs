@@ -282,6 +282,15 @@ impl Game {
                 i32::try_from(self.source_object_set_targets(*objects, source).len())
                     .unwrap_or(i32::MAX)
             }
+            // A total over the same sets, for a bound on what the members
+            // hold rather than on how many there are: "twenty-five or more
+            // loyalty counters among Jaces you control".
+            crate::card::ValueDef::AggregateObjectValues(aggregate) => self
+                .aggregate_object_values(
+                    self.source_object_set_targets(aggregate.objects, source),
+                    aggregate.select,
+                    aggregate.operation,
+                ),
             crate::card::ValueDef::CardTypesAmongObjects(objects) => {
                 self.card_types_among_targets(&self.source_object_set_targets(*objects, source))
             }

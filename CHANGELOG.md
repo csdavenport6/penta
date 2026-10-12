@@ -20,6 +20,16 @@ the bot-wire epoch.
 
 ## Unreleased
 
+- Implement Empower Jace (CR 701.71) and the 27 Reality Fracture cards built
+  on it: the 21 that empower Jace and the six that grant a loyalty ability to
+  planeswalkers you control. `reality_fracture::empower_jace(amount)` composes
+  the keyword action from existing effects around one shared Jace planeswalker
+  token; granted loyalty abilities share their planeswalker's one activation
+  each turn. Activation and event-time conditions can now read a total over an
+  object set (`ValueDef::AggregateObjectValues`), which previously evaluated as
+  0 outside a resolving effect. Protocol, checkpoint, and replay versions are
+  unchanged.
+
 - Catalog Reality Fracture (`FRA`, slug `reality-fracture`) and make it legal
   in Legacy and Vintage. cEDH and Duel Commander see it through the shared
   catalog; no Standard profile includes it. Its 247 non-preparation identities
