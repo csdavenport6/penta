@@ -4,8 +4,6 @@ use super::*;
 /// "Whenever another nontoken creature you control enters, untap Arni."
 #[test]
 fn arni_humble_scribe_untaps_only_for_another_nontoken_creature_of_yours() {
-    static SOLDIER: TokenCharacteristics =
-        TokenCharacteristics::creature(&["Soldier"], &[ManaColor::White], 1, 1);
     for prepared_engine in [false, true] {
         let mut game = setup(prepared_engine);
         let arni = settled(&mut game, cards::ARNI_HUMBLE_SCRIBE);
@@ -93,6 +91,29 @@ fn fblthp_impossibly_lost_is_shuffled_into_a_library_that_still_has_cards() {
     }
 }
 
+/// A Fblthp who has left before his trigger resolves is a new object where
+/// he lies, so he stays there; the library is shuffled all the same.
+#[test]
+fn fblthp_impossibly_lost_stays_where_he_went_if_he_left_before_resolving() {
+    for prepared_engine in [false, true] {
+        let mut game = setup(prepared_engine);
+        stock_library(&mut game);
+        let fblthp = settled(&mut game, cards::FBLTHP_IMPOSSIBLY_LOST);
+        let bears = settled(&mut game, cards::GRIZZLY_BEARS);
+        connect_with(&mut game, bears);
+        game.destroy_permanent(fblthp);
+        drain_pending(&mut game);
+
+        assert_eq!(game.players[0].hand.len(), 2);
+        assert_eq!(game.players[0].library.len(), 8);
+        assert_eq!(game.players[0].graveyard.len(), 1);
+        assert_eq!(
+            game.players[0].graveyard[0].definition,
+            cards::FBLTHP_IMPOSSIBLY_LOST
+        );
+    }
+}
+
 /// "When one or more of your opponents are dealt combat damage during your
 /// turn": combat damage dealt to you, on an opponent's turn, is neither.
 #[test]
@@ -125,6 +146,56 @@ fn fblthp_impossibly_lost_ignores_combat_damage_dealt_to_you_on_another_turn() {
         assert_eq!(game.players[0].life, 18);
         assert!(game.players[0].hand.is_empty());
         assert!(on_battlefield(&game, fblthp));
+    }
+}
+
+/// "During your turn" is its own condition: an opponent dealt combat damage
+/// while it is somebody else's turn does not trigger Fblthp.
+#[test]
+fn fblthp_impossibly_lost_ignores_an_opponents_combat_damage_outside_your_turn() {
+    for prepared_engine in [false, true] {
+        let mut game = setup(prepared_engine);
+        stock_library(&mut game);
+        let fblthp = settled(&mut game, cards::FBLTHP_IMPOSSIBLY_LOST);
+        let bears = settled(&mut game, cards::GRIZZLY_BEARS);
+        // No rule has your creature attacking on another player's turn, so the
+        // turn changes hands between the declaration and the damage to ask
+        // the condition on its own.
+        attack_with(&mut game, bears);
+        game.finish_declaring_blockers();
+        game.active_player = PlayerId::Two;
+
+        game.deal_combat_damage();
+        drain_pending(&mut game);
+
+        assert_eq!(game.players[1].life, 18, "the damage was dealt");
+        assert!(game.players[0].hand.is_empty());
+        assert!(on_battlefield(&game, fblthp));
+    }
+}
+
+/// "Noncreature spells you cast cost {1} less to cast": not a creature spell,
+/// and not an opponent's spell.
+#[test]
+fn geist_of_saint_thalia_discounts_only_your_noncreature_spells() {
+    for prepared_engine in [false, true] {
+        let mut game = setup(prepared_engine);
+        settled(&mut game, cards::GEIST_OF_SAINT_THALIA);
+        let divination = hand(&mut game, cards::DIVINATION);
+        let bears = hand(&mut game, cards::GRIZZLY_BEARS);
+        game.add_unrestricted_mana(PlayerId::One, ManaColor::Green, 1);
+        assert!(!can_cast(&game, PlayerId::One, bears), "{{1}}{{G}} still");
+        game.add_unrestricted_mana(PlayerId::One, ManaColor::Blue, 1);
+        assert!(
+            can_cast(&game, PlayerId::One, divination),
+            "{{2}}{{U}} less {{1}}"
+        );
+
+        game.active_player = PlayerId::Two;
+        game.priority = PlayerId::Two;
+        let theirs = in_hand_of(&mut game, PlayerId::Two, cards::DIVINATION);
+        game.add_unrestricted_mana(PlayerId::Two, ManaColor::Blue, 2);
+        assert!(!can_cast(&game, PlayerId::Two, theirs));
     }
 }
 
@@ -332,54 +403,6 @@ fn yuriko_hope_from_the_shadows_shrinks_a_creature_by_your_graveyard() {
         assert_eq!(
             (game.power(angel), game.toughness(angel)),
             (Some(1), Some(4))
-        );
-    }
-}
-
-/// "Noncreature spells you cast cost {1} less to cast": not a creature spell,
-/// and not an opponent's spell.
-#[test]
-fn geist_of_saint_thalia_discounts_only_your_noncreature_spells() {
-    for prepared_engine in [false, true] {
-        let mut game = setup(prepared_engine);
-        settled(&mut game, cards::GEIST_OF_SAINT_THALIA);
-        let divination = hand(&mut game, cards::DIVINATION);
-        let bears = hand(&mut game, cards::GRIZZLY_BEARS);
-        game.add_unrestricted_mana(PlayerId::One, ManaColor::Green, 1);
-        assert!(!can_cast(&game, PlayerId::One, bears), "{{1}}{{G}} still");
-        game.add_unrestricted_mana(PlayerId::One, ManaColor::Blue, 1);
-        assert!(
-            can_cast(&game, PlayerId::One, divination),
-            "{{2}}{{U}} less {{1}}"
-        );
-
-        game.active_player = PlayerId::Two;
-        game.priority = PlayerId::Two;
-        let theirs = in_hand_of(&mut game, PlayerId::Two, cards::DIVINATION);
-        game.add_unrestricted_mana(PlayerId::Two, ManaColor::Blue, 2);
-        assert!(!can_cast(&game, PlayerId::Two, theirs));
-    }
-}
-
-/// A Fblthp who has left before his trigger resolves is a new object where
-/// he lies, so he stays there; the library is shuffled all the same.
-#[test]
-fn fblthp_impossibly_lost_stays_where_he_went_if_he_left_before_resolving() {
-    for prepared_engine in [false, true] {
-        let mut game = setup(prepared_engine);
-        stock_library(&mut game);
-        let fblthp = settled(&mut game, cards::FBLTHP_IMPOSSIBLY_LOST);
-        let bears = settled(&mut game, cards::GRIZZLY_BEARS);
-        connect_with(&mut game, bears);
-        game.destroy_permanent(fblthp);
-        drain_pending(&mut game);
-
-        assert_eq!(game.players[0].hand.len(), 2);
-        assert_eq!(game.players[0].library.len(), 8);
-        assert_eq!(game.players[0].graveyard.len(), 1);
-        assert_eq!(
-            game.players[0].graveyard[0].definition,
-            cards::FBLTHP_IMPOSSIBLY_LOST
         );
     }
 }

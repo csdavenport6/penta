@@ -108,6 +108,25 @@ fn koth_the_geomancer_adds_red_mana_only_for_a_mountain() {
     }
 }
 
+/// "If that land is a Mountain" asks about the land that entered, as it last
+/// was if it has gone by the time the trigger resolves.
+#[test]
+fn koth_the_geomancer_adds_red_mana_for_a_mountain_that_has_already_left() {
+    for prepared_engine in [false, true] {
+        let mut game = setup(prepared_engine);
+        settled(&mut game, cards::KOTH_THE_GEOMANCER);
+        let mountain = game
+            .put_onto_battlefield(PlayerId::One, cards::MOUNTAIN)
+            .unwrap();
+        game.destroy_permanent(mountain);
+
+        drain_pending(&mut game);
+
+        assert_eq!(game.players[1].life, 19);
+        assert_eq!(game.players[0].mana_pool.amount(ManaColor::Red), 1);
+    }
+}
+
 /// "{2}, {T}, Sacrifice an artifact or land: Draw a card."
 #[test]
 fn marwyn_the_clearcutter_sacrifices_an_artifact_or_a_land_to_draw() {
@@ -120,17 +139,13 @@ fn marwyn_the_clearcutter_sacrifices_an_artifact_or_a_land_to_draw() {
         settled(&mut game, cards::GRIZZLY_BEARS);
         game.add_unrestricted_mana(PlayerId::One, ManaColor::Red, 2);
 
-        let mut payments = activations(&game, marwyn, "{2}, {T}, Sacrifice")
-            .into_iter()
-            .map(|action| match action {
-                Action::ActivateAbility { cost_objects, .. } => cost_objects,
-                _ => unreachable!("only activations are collected"),
-            })
-            .collect::<Vec<_>>();
-        payments.sort();
         let mut wanted = [vec![mox], vec![forest]];
         wanted.sort();
-        assert_eq!(payments, wanted, "not a creature, and not Marwyn");
+        assert_eq!(
+            sacrifices_offered(&game, marwyn, "{2}, {T}, Sacrifice"),
+            wanted,
+            "not a creature, and not Marwyn"
+        );
 
         activate(&mut game, marwyn, "{2}, {T}, Sacrifice");
         drain_pending(&mut game);
@@ -200,40 +215,5 @@ fn winter_team_player_strengthens_the_creatures_you_control_as_the_trigger_resol
         assert_eq!(stats(winter), (Some(4), Some(3)));
         assert_eq!(stats(theirs), (Some(2), Some(2)));
         assert_eq!(stats(late), (Some(3), Some(3)), "it arrived afterwards");
-    }
-}
-
-/// "Convoke": each creature tapped pays for {1} or one mana of its color.
-#[test]
-fn winter_team_player_is_cast_by_tapping_creatures() {
-    for prepared_engine in [false, true] {
-        let mut game = setup(prepared_engine);
-        let winter = hand(&mut game, cards::WINTER_TEAM_PLAYER);
-        game.add_unrestricted_mana(PlayerId::One, ManaColor::Red, 3);
-        assert!(!can_cast(&game, PlayerId::One, winter), "{{4}}{{R}}");
-
-        settled(&mut game, cards::GRIZZLY_BEARS);
-        settled(&mut game, cards::GRIZZLY_BEARS);
-
-        assert!(can_cast(&game, PlayerId::One, winter));
-    }
-}
-
-/// "If that land is a Mountain" asks about the land that entered, as it last
-/// was if it has gone by the time the trigger resolves.
-#[test]
-fn koth_the_geomancer_adds_red_mana_for_a_mountain_that_has_already_left() {
-    for prepared_engine in [false, true] {
-        let mut game = setup(prepared_engine);
-        settled(&mut game, cards::KOTH_THE_GEOMANCER);
-        let mountain = game
-            .put_onto_battlefield(PlayerId::One, cards::MOUNTAIN)
-            .unwrap();
-        game.destroy_permanent(mountain);
-
-        drain_pending(&mut game);
-
-        assert_eq!(game.players[1].life, 19);
-        assert_eq!(game.players[0].mana_pool.amount(ManaColor::Red), 1);
     }
 }

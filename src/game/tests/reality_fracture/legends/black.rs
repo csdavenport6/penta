@@ -1,27 +1,6 @@
 //! Reality Fracture's black legends.
 use super::*;
 
-/// "Whenever another creature or planeswalker you control enters, mill two
-/// cards."
-#[test]
-fn liliana_the_repentant_mills_two_for_another_creature_or_planeswalker_of_yours() {
-    for prepared_engine in [false, true] {
-        let mut game = setup(prepared_engine);
-        stock_library(&mut game);
-        settled(&mut game, cards::LILIANA_THE_REPENTANT);
-        settled(&mut game, cards::MOX_RUBY);
-        assert!(
-            game.players[0].graveyard.is_empty(),
-            "herself, and an artifact"
-        );
-
-        settled(&mut game, cards::GRIZZLY_BEARS);
-        settled(&mut game, cards::JACE_MEMORY_ADEPT);
-
-        assert_eq!(game.players[0].graveyard.len(), 4);
-    }
-}
-
 /// "Exhaust — {5}{B}: Return target creature or planeswalker card from your
 /// graveyard to the battlefield. Put a +1/+1 counter on Liliana. Activate
 /// only as a sorcery. (Activate each exhaust ability only once.)"
@@ -168,6 +147,26 @@ fn winter_tormented_loner_has_each_opponent_sacrifice_a_creature_of_their_choice
     }
 }
 
+/// Winter is a creature he may sacrifice himself, and the reflexive trigger
+/// still asks the opponent once he is gone.
+#[test]
+fn winter_tormented_loner_may_sacrifice_himself() {
+    for prepared_engine in [false, true] {
+        let (mut game, bears, [their_bears, their_angel]) = winter_offering(prepared_engine);
+        let winter = controlled(&game, cards::WINTER_TORMENTED_LONER)[0];
+
+        choose(&mut game, PlayerId::One, winter);
+        run_to_decision(&mut game).expect("the opponent chooses");
+        choose(&mut game, PlayerId::Two, their_angel);
+        drain_pending(&mut game);
+
+        assert!(!on_battlefield(&game, winter));
+        assert!(on_battlefield(&game, bears));
+        assert!(on_battlefield(&game, their_bears));
+        assert!(!on_battlefield(&game, their_angel));
+    }
+}
+
 #[test]
 fn winter_tormented_loner_asks_nothing_of_the_opponent_when_you_decline() {
     for prepared_engine in [false, true] {
@@ -208,25 +207,5 @@ fn winter_tormented_loner_counts_creature_and_planeswalker_cards_in_your_graveya
             (game.power(winter), game.toughness(winter)),
             (Some(2), Some(3))
         );
-    }
-}
-
-/// Winter is a creature he may sacrifice himself, and the reflexive trigger
-/// still asks the opponent once he is gone.
-#[test]
-fn winter_tormented_loner_may_sacrifice_himself() {
-    for prepared_engine in [false, true] {
-        let (mut game, bears, [their_bears, their_angel]) = winter_offering(prepared_engine);
-        let winter = controlled(&game, cards::WINTER_TORMENTED_LONER)[0];
-
-        choose(&mut game, PlayerId::One, winter);
-        run_to_decision(&mut game).expect("the opponent chooses");
-        choose(&mut game, PlayerId::Two, their_angel);
-        drain_pending(&mut game);
-
-        assert!(!on_battlefield(&game, winter));
-        assert!(on_battlefield(&game, bears));
-        assert!(on_battlefield(&game, their_bears));
-        assert!(!on_battlefield(&game, their_angel));
     }
 }

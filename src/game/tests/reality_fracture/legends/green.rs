@@ -118,8 +118,6 @@ fn jiang_yanggu_never_alone_creates_mowu_a_legendary_green_dog() {
 /// "At the beginning of your end step, untap all tokens you control."
 #[test]
 fn jiang_yanggu_never_alone_untaps_your_tokens_at_your_end_step() {
-    static SOLDIER: TokenCharacteristics =
-        TokenCharacteristics::creature(&["Soldier"], &[ManaColor::White], 1, 1);
     for prepared_engine in [false, true] {
         let mut game = setup(prepared_engine);
         settled(&mut game, cards::JIANG_YANGGU_NEVER_ALONE);

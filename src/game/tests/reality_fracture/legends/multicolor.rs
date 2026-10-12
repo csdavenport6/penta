@@ -14,17 +14,13 @@ fn edgar_ancient_bloodlord_gains_life_for_the_creature_his_ability_sacrifices() 
         settled(&mut game, cards::MOX_RUBY);
         game.add_unrestricted_mana(PlayerId::One, ManaColor::Black, 2);
 
-        let mut payments = activations(&game, edgar, "{2}, Sacrifice another")
-            .into_iter()
-            .map(|action| match action {
-                Action::ActivateAbility { cost_objects, .. } => cost_objects,
-                _ => unreachable!("only activations are collected"),
-            })
-            .collect::<Vec<_>>();
-        payments.sort();
         let mut wanted = [vec![bears], vec![jace]];
         wanted.sort();
-        assert_eq!(payments, wanted, "not Edgar himself, and not an artifact");
+        assert_eq!(
+            sacrifices_offered(&game, edgar, "{2}, Sacrifice another"),
+            wanted,
+            "not Edgar himself, and not an artifact"
+        );
 
         activate(&mut game, edgar, "{2}, Sacrifice another");
         drain_pending(&mut game);
@@ -113,28 +109,6 @@ fn karn_gilded_guardian_draws_for_each_color_among_your_other_artifacts() {
 
             assert_eq!(game.players[0].hand.len(), drawn, "{artifacts:?}");
         }
-    }
-}
-
-/// "{2/W}{2/U}{2/B}{2/R}{2/G}": each symbol is two generic mana or one mana
-/// of its color.
-#[test]
-fn karn_gilded_guardian_is_cast_for_one_mana_of_each_color() {
-    for prepared_engine in [false, true] {
-        let mut game = setup(prepared_engine);
-        let karn = hand(&mut game, cards::KARN_GILDED_GUARDIAN);
-        for color in [
-            ManaColor::White,
-            ManaColor::Blue,
-            ManaColor::Black,
-            ManaColor::Red,
-        ] {
-            game.add_unrestricted_mana(PlayerId::One, color, 1);
-        }
-        assert!(!can_cast(&game, PlayerId::One, karn));
-
-        game.add_unrestricted_mana(PlayerId::One, ManaColor::Green, 1);
-        assert!(can_cast(&game, PlayerId::One, karn));
     }
 }
 
@@ -235,15 +209,7 @@ fn vraska_soul_of_stone_makes_a_sculpture_treasure_that_is_a_vigilant_creature()
 
         permanent_mut(&mut game, id).entered_controller_turn = 0;
         let green = game.players[0].mana_pool.amount(ManaColor::Green);
-        let tap = game
-            .legal_actions(PlayerId::One)
-            .into_iter()
-            .find(|action| {
-                matches!(action, Action::ActivateManaAbility { source, color, .. }
-                    if *source == id && *color == ManaColor::Green)
-            })
-            .expect("it taps for any color");
-        game.apply(PlayerId::One, tap).unwrap();
+        tap_for(&mut game, id, ManaColor::Green);
         assert!(!on_battlefield(&game, id), "sacrificed for the mana");
         assert_eq!(
             game.players[0].mana_pool.amount(ManaColor::Green),

@@ -189,6 +189,10 @@ const HEARTWOOD_TOKEN: TokenCharacteristics = crate::card::tokens::heartwood().w
     CardArt::new("eb4bf635-04d7-4994-9f70-4ff573a767e7", "Tianxing Xu"),
 );
 
+const TREASURE_TOKEN: TokenCharacteristics = crate::card::tokens::treasure().with_art(
+    CardArt::new("03992f88-7a15-4234-9bed-b7617d7ff09c", "Alayna Danner"),
+);
+
 /// "Creature or planeswalker", as a target or as a group to count over.
 const A_CREATURE_OR_PLANESWALKER: ObjectPredicateDef = ObjectPredicateDef::AnyOf(&[
     ObjectPredicateDef::HasType(CardType::Creature),
@@ -7300,10 +7304,10 @@ pub(in crate::card::sets) static RURIC_THAR_MAGECRUSHER: CardRecord = CardRecord
 );
 
 // FRA 266 — Titanbones, Towering Heart
-// Audit: unsupported — Needs "when you discard this card" heard by the discarded card wherever
-// the discard put it. A triggered ability listens from one zone, so a graveyard listener would
-// miss a discard that Rest in Peace or Leyline of the Void exiles instead, which is still a
-// discard.
+// Audit: unsupported — Needs a discard event the discarded card itself hears, wherever the
+// discard put it. The per-card discard event never reaches the card it discarded, and watching
+// for its arrival in the graveyard from a hand instead would miss a discard that Rest in Peace
+// or Leyline of the Void exiles, which is still a discard.
 pub(in crate::card::sets) static TITANBONES_TOWERING_HEART: CardRecord = CardRecord::new(
     "Titanbones, Towering Heart",
     "edea6f70-a5a7-475d-b7f2-97933d0f32cf",
@@ -7738,15 +7742,9 @@ pub(in crate::card::sets) static VRASKA_THE_CUTTING_GLARE: CardRecord = CardReco
                         then: None,
                     },
                     EffectDef::CreateToken(
-                        CreateTokenDef::new(TokenDef::Literal(
-                            crate::card::tokens::treasure().with_art(CardArt::new(
-                                "03992f88-7a15-4234-9bed-b7617d7ff09c",
-                                "Alayna Danner",
-                            )),
-                        ))
-                        .with_controller(PlayerRefDef::ControllerOf(
-                            ObjectRefDef::Target(TargetIndex::PRIMARY),
-                        )),
+                        CreateTokenDef::new(TokenDef::Literal(TREASURE_TOKEN)).with_controller(
+                            PlayerRefDef::ControllerOf(ObjectRefDef::Target(TargetIndex::PRIMARY)),
+                        ),
                     ),
                 ]),
             ),

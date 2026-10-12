@@ -24,10 +24,11 @@ the bot-wire epoch.
   existing effects. Two stay unsupported. Jiang Yanggu, Alone needs an attack
   matcher that counts only the creatures declared against the same player; the
   declaration-size range also counts attackers aimed at that player's
-  planeswalkers. Titanbones, Towering Heart needs "when you discard this card"
-  heard from wherever the discard put the card; a trigger listens from one
-  zone, so a graveyard listener would miss a discard that Rest in Peace exiles
-  instead. Protocol, checkpoint, and replay versions are unchanged.
+  planeswalkers. Titanbones, Towering Heart needs a discard event the
+  discarded card itself hears; the per-card event never reaches that card, and
+  watching for its arrival in the graveyard would miss a discard that Rest in
+  Peace exiles instead. Protocol, checkpoint, and replay versions are
+  unchanged.
 
 - Implement 44 Reality Fracture multicolor cards, artifacts, and lands
   (collector numbers 121 to 194) from existing effects. Protocol, checkpoint,

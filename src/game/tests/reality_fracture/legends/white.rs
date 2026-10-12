@@ -126,6 +126,32 @@ fn danitha_sword_of_hope_draws_for_a_spell_that_targets_a_creature_you_control()
     }
 }
 
+/// "Whenever you cast": an opponent's Equipment spell is not yours.
+#[test]
+fn danitha_sword_of_hope_draws_nothing_for_an_opponents_equipment_spell() {
+    for prepared_engine in [false, true] {
+        let mut game = setup(prepared_engine);
+        stock_library(&mut game);
+        settled(&mut game, cards::DANITHA_SWORD_OF_HOPE);
+        game.active_player = PlayerId::Two;
+        game.priority = PlayerId::Two;
+        let bonesplitter = in_hand_of(&mut game, PlayerId::Two, cards::BONESPLITTER);
+        game.add_unrestricted_mana(PlayerId::Two, ManaColor::Colorless, 1);
+
+        let action = game
+            .legal_actions(PlayerId::Two)
+            .into_iter()
+            .find(
+                |action| matches!(action, Action::CastSpell { card, .. } if *card == bonesplitter),
+            )
+            .expect("the opponent can cast it");
+        game.apply(PlayerId::Two, action).unwrap();
+        drain_pending(&mut game);
+
+        assert!(game.players[0].hand.is_empty());
+    }
+}
+
 /// "This spell costs {X} less to cast, where X is the greatest toughness
 /// among creatures you control", and never less than {W}.
 #[test]
@@ -221,8 +247,6 @@ fn ghalta_the_immovable_assigns_its_own_toughness() {
 /// creature card, and not the opponent's token.
 #[test]
 fn gideons_memorial_strengthens_only_creature_tokens_you_control() {
-    static SOLDIER: TokenCharacteristics =
-        TokenCharacteristics::creature(&["Soldier"], &[ManaColor::White], 1, 1);
     for prepared_engine in [false, true] {
         let mut game = setup(prepared_engine);
         settled(&mut game, cards::GIDEON_S_MEMORIAL);
@@ -254,15 +278,7 @@ fn gideons_memorial_mana_casts_a_planeswalker_spell_and_nothing_else() {
         let lions = hand(&mut game, cards::SAVANNAH_LIONS);
         game.add_unrestricted_mana(PlayerId::One, ManaColor::Colorless, 1);
 
-        let tap = game
-            .legal_actions(PlayerId::One)
-            .into_iter()
-            .find(|action| {
-                matches!(action, Action::ActivateManaAbility { source, color, .. }
-                    if *source == memorial && *color == ManaColor::White)
-            })
-            .expect("the Memorial taps for any color");
-        game.apply(PlayerId::One, tap).unwrap();
+        tap_for(&mut game, memorial, ManaColor::White);
 
         assert!(can_cast(&game, PlayerId::One, ajani), "{{1}}{{W}}");
         assert!(!can_cast(&game, PlayerId::One, lions), "{{W}}");
@@ -279,8 +295,13 @@ fn gideons_memorial_discarded_from_hand_deals_four_damage_to_an_attacking_creatu
         game.put_onto_battlefield(PlayerId::Two, cards::GRIZZLY_BEARS)
             .unwrap();
         attack_with(&mut game, giant);
+        let on_battlefield_already = settled(&mut game, cards::GIDEON_S_MEMORIAL);
         let memorial = hand(&mut game, cards::GIDEON_S_MEMORIAL);
         game.add_unrestricted_mana(PlayerId::One, ManaColor::White, 2);
+        assert!(
+            activations(&game, on_battlefield_already, "{1}{W}, Discard").is_empty(),
+            "only a Memorial in hand can be discarded"
+        );
 
         let actions = game
             .legal_actions(PlayerId::One)
