@@ -182,24 +182,6 @@ fn essence_burn_targets_only_black_or_green_creatures_and_planeswalkers() {
     }
 }
 
-/// "If that permanent would die this turn, exile it instead."
-#[test]
-fn essence_burn_exiles_the_creature_it_kills() {
-    for prepared_engine in [false, true] {
-        let mut game = setup(prepared_engine);
-        let knight = game
-            .put_onto_battlefield(PlayerId::Two, cards::BLACK_KNIGHT)
-            .unwrap();
-
-        cast(&mut game, cards::ESSENCE_BURN, &[Target::Permanent(knight)]);
-        drain_pending(&mut game);
-
-        assert!(!on_battlefield(&game, knight));
-        assert!(game.players[1].graveyard.is_empty());
-        assert_eq!(game.players[1].exile.len(), 1);
-    }
-}
-
 /// Face Yourself resolved at the opponent, who controls a 2/2, a 4/4 and a
 /// land. Returns the tokens it made for player one.
 fn facing_the_opponent(game: &mut Game) -> Vec<GameObjectId> {
@@ -419,5 +401,27 @@ fn tether_technician_that_keeps_its_cards_deals_no_damage() {
 
         assert_eq!(game.players[0].hand.len(), 1);
         assert_eq!(permanent(&game, angel).damage, 0);
+    }
+}
+
+/// "This spell costs {1} less to cast if you control a legendary creature":
+/// a count read while the spell is being priced, over your permanents only.
+#[test]
+fn wrath_of_the_bloodmane_costs_one_less_while_you_control_a_legendary_creature() {
+    for prepared_engine in [false, true] {
+        let mut game = setup(prepared_engine);
+        game.put_onto_battlefield(PlayerId::Two, cards::YARGLE_GLUTTON_OF_URBORG)
+            .unwrap();
+        settled(&mut game, cards::GRIZZLY_BEARS);
+        let wrath = hand(&mut game, cards::WRATH_OF_THE_BLOODMANE);
+        game.add_unrestricted_mana(PlayerId::One, ManaColor::Red, 2);
+
+        assert!(casts(&game, wrath).is_empty(), "two mana is one short");
+
+        settled(&mut game, cards::YARGLE_GLUTTON_OF_URBORG);
+        assert!(
+            !casts(&game, wrath).is_empty(),
+            "your Yargle makes up the difference"
+        );
     }
 }

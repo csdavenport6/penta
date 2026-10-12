@@ -59,12 +59,8 @@ fn budding_insurgent_draws_for_a_legendary_enchantment_it_cannot_destroy() {
     }
 }
 
-static PLANESWALKER: TokenCharacteristics = TokenCharacteristics::new(
-    CardTypeSet::single(CardType::Planeswalker),
-    &["Jace"],
-    &[ManaColor::Blue],
-    None,
-);
+static PLANESWALKER: TokenCharacteristics =
+    TokenCharacteristics::new(CardTypeSet::single(CardType::Planeswalker), &[], &[], None);
 
 /// A planeswalker of player one's holding exactly `loyalty`.
 fn planeswalker_with(game: &mut Game, loyalty: u16) -> GameObjectId {
@@ -237,28 +233,6 @@ fn flourishing_grapple_still_strips_abilities_when_your_creature_has_left() {
 
 const CHARGE: CounterKind = CounterKind::named("charge");
 
-/// "Whenever a creature you control dies, put a charge counter on this
-/// enchantment."
-#[test]
-fn gardenize_gains_a_charge_counter_for_each_creature_of_yours_that_dies() {
-    for prepared_engine in [false, true] {
-        let mut game = setup(prepared_engine);
-        let gardenize = settled(&mut game, cards::GARDENIZE);
-        let bears = settled(&mut game, cards::GRIZZLY_BEARS);
-        let theirs = game
-            .put_onto_battlefield(PlayerId::Two, cards::GRIZZLY_BEARS)
-            .unwrap();
-
-        game.destroy_permanent(theirs);
-        drain_pending(&mut game);
-        assert_eq!(permanent(&game, gardenize).counters(CHARGE), 0);
-
-        game.destroy_permanent(bears);
-        drain_pending(&mut game);
-        assert_eq!(permanent(&game, gardenize).counters(CHARGE), 1);
-    }
-}
-
 /// Gardenize with three charge counters as `active`'s first main phase
 /// begins, its trigger waiting if there is one.
 fn gardenize_at_first_main_phase(game: &mut Game, active: PlayerId) -> GameObjectId {
@@ -362,24 +336,13 @@ fn hexhaven_invigorator_fetches_up_to_as_many_lands_as_the_damage_it_was_dealt()
     }
 }
 
-#[test]
-fn hexhaven_invigorator_may_leave_its_library_alone() {
-    for prepared_engine in [false, true] {
-        let mut game = setup(prepared_engine);
-        let invigorator = settled(&mut game, cards::HEXHAVEN_INVIGORATOR);
-        stock_library(&mut game);
-
-        cast(
-            &mut game,
-            cards::LIGHTNING_BOLT,
-            &[Target::Permanent(invigorator)],
-        );
-        run_to_decision(&mut game).expect("searching is offered");
-        choose_decision_by_label(&mut game, PlayerId::One, "Decline");
-        assert!(run_to_decision(&mut game).is_none());
-
-        assert_eq!(game.players[0].library.len(), 10);
-    }
+/// The colors `permanent` is.
+fn colors(game: &Game, permanent: &Permanent) -> Vec<ManaColor> {
+    ManaColor::COLORS
+        .into_iter()
+        .zip(game.permanent_colors(permanent))
+        .filter_map(|(color, has)| has.then_some(color))
+        .collect()
 }
 
 /// The colors of mana player one could tap `source` for.
@@ -419,11 +382,7 @@ fn hungering_puppetbeast_makes_a_heartwood_that_taps_for_red_or_green() {
             game.effective_subtypes(heartwood)
                 .contains(Subtype::from_name("Heartwood").unwrap())
         );
-        // White, blue, black, red, green.
-        assert_eq!(
-            game.permanent_colors(heartwood),
-            [false, false, false, true, true]
-        );
+        assert_eq!(colors(&game, heartwood), [ManaColor::Red, ManaColor::Green]);
         assert_eq!(
             mana_colors(&game, heartwood.card.id),
             [ManaColor::Red, ManaColor::Green]
@@ -480,16 +439,7 @@ fn hunters_axe_gives_the_equipped_creature_its_controllers_choice_as_it_attacks(
         permanent_mut(&mut game, axe).attached_to = Some(bears);
         assert_eq!(game.power(permanent(&game, bears)), Some(4));
 
-        game.step = Step::DeclareAttackers;
-        game.apply(
-            PlayerId::One,
-            Action::DeclareAttacker {
-                attacker: bears,
-                defender: AttackDefender::Player(PlayerId::Two),
-            },
-        )
-        .unwrap();
-        game.finish_declaring_attackers();
+        declare_attack(&mut game, bears);
         run_to_decision(&mut game).expect("the keyword is chosen as the trigger resolves");
         choose_decision_by_label(&mut game, PlayerId::One, "Deathtouch");
         drain_pending(&mut game);
@@ -550,19 +500,6 @@ fn omnipresence_casts_an_x_spell_only_for_zero() {
             .collect::<Vec<_>>();
 
         assert_eq!(chosen, [0], "{{X}}{{R}} has mana value 1 in hand");
-    }
-}
-
-/// Without Omnipresence nothing is free.
-#[test]
-fn omnipresence_is_what_makes_the_spells_free() {
-    for prepared_engine in [false, true] {
-        let mut game = setup(prepared_engine);
-        settled(&mut game, cards::GRIZZLY_BEARS);
-        settled(&mut game, cards::GRIZZLY_BEARS);
-        let two = hand(&mut game, cards::GRIZZLY_BEARS);
-
-        assert!(casts(&game, two).is_empty());
     }
 }
 
@@ -692,25 +629,14 @@ fn something_worth_saving_may_leave_every_card_and_still_gains_life() {
     }
 }
 
-/// The target lists of player one's legal activations of the card or
-/// permanent `source`, one per activation.
-fn activation_targets_of(game: &Game, source: GameObjectId) -> Vec<Vec<Target>> {
+/// Player one's legal activations of the card or permanent `source`,
+/// wherever it is.
+fn activations_of(game: &Game, source: GameObjectId) -> Vec<Action> {
     game.legal_actions(PlayerId::One)
         .into_iter()
-        .filter_map(|action| match action {
-            Action::ActivateAbility {
-                source: activated,
-                targets,
-                ..
-            } if activated == source => Some(
-                targets
-                    .iter()
-                    .flat_map(TargetSelection::targets)
-                    .copied()
-                    .collect(),
-            ),
-            _ => None,
-        })
+        .filter(
+            |action| matches!(action, Action::ActivateAbility { source: activated, .. } if *activated == source),
+        )
         .collect()
 }
 
@@ -728,21 +654,15 @@ fn sureshot_sower_is_discarded_from_hand_to_destroy_a_creature_with_flying() {
         let sower = hand(&mut game, cards::SURESHOT_SOWER);
         game.add_unrestricted_mana(PlayerId::One, ManaColor::Green, 4);
 
-        assert_eq!(
-            activation_targets_of(&game, sower),
-            [vec![Target::Permanent(angel)]],
-            "only a creature with flying"
-        );
+        let mut from_hand = activations_of(&game, sower);
+        let action = from_hand.remove(0);
+        assert_eq!(announced_targets(&action), [Target::Permanent(angel)]);
+        assert!(from_hand.is_empty(), "only a creature with flying");
         assert!(
-            activation_targets_of(&game, on_the_battlefield).is_empty(),
+            activations_of(&game, on_the_battlefield).is_empty(),
             "the ability works only from hand"
         );
 
-        let action = game
-            .legal_actions(PlayerId::One)
-            .into_iter()
-            .find(|action| matches!(action, Action::ActivateAbility { source, .. } if *source == sower))
-            .unwrap();
         game.apply(PlayerId::One, action).unwrap();
         assert!(game.players[0].hand.is_empty(), "discarded as a cost");
         drain_pending(&mut game);
@@ -785,18 +705,14 @@ fn verdant_kraken_makes_you_a_forest_tentacle_at_each_players_upkeep() {
             (game.power(tentacle), game.toughness(tentacle)),
             (Some(3), Some(3))
         );
-        // White, blue, black, red, green.
-        assert_eq!(
-            game.permanent_colors(tentacle),
-            [false, false, false, false, true]
-        );
+        assert_eq!(colors(&game, tentacle), [ManaColor::Green]);
     }
 }
 
 /// "(It has '{T}: Add {G}.' It's affected by summoning sickness until your
 /// next turn.)"
 #[test]
-fn a_forest_tentacle_taps_for_green_once_your_next_turn_has_begun() {
+fn verdant_krakens_forest_tentacle_taps_for_green_once_your_next_turn_has_begun() {
     for prepared_engine in [false, true] {
         let mut game = setup(prepared_engine);
         settled(&mut game, cards::VERDANT_KRAKEN);

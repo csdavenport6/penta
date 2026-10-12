@@ -107,6 +107,26 @@ pub const fn map() -> TokenCharacteristics {
     TokenCharacteristics::artifact(&["Map"], &[]).with_abilities(&MAP_ABILITIES)
 }
 
+static HEARTWOOD_ABILITIES: [AbilityDef; 1] = [AbilityDef::activated_mana(
+    "{T}: Add {R} or {G}.",
+    &[CostDef::TapSource],
+    EffectDef::AddMana(AddManaEffectDef::choice(&[
+        crate::card::ManaColor::Red,
+        crate::card::ManaColor::Green,
+    ])),
+)];
+
+/// The rules-defined Heartwood artifact token (CR 111.10x): red and green,
+/// unlike the colorless tokens above.
+#[must_use]
+pub const fn heartwood() -> TokenCharacteristics {
+    TokenCharacteristics::artifact(
+        &["Heartwood"],
+        &[crate::card::ManaColor::Red, crate::card::ManaColor::Green],
+    )
+    .with_abilities(&HEARTWOOD_ABILITIES)
+}
+
 static INCUBATOR_TRANSFORM_COST: [CostDef; 1] = [CostDef::Mana(mana_cost!("{2}"))];
 static INCUBATOR_ABILITIES: [AbilityDef; 1] = [AbilityDef::activated(
     "{2}: Transform this token.",
@@ -159,6 +179,7 @@ mod tests {
             (clue(), "Clue"),
             (blood(), "Blood"),
             (map(), "Map"),
+            (heartwood(), "Heartwood"),
         ] {
             assert_eq!(token.name(), expected);
             assert_eq!(token.rules().subtypes(), &[expected]);

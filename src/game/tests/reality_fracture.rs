@@ -56,24 +56,31 @@ fn choose(game: &mut Game, player: PlayerId, id: GameObjectId) {
     .unwrap();
 }
 
+/// The targets an activation was announced with, in slot order.
+fn announced_targets(action: &Action) -> Vec<Target> {
+    match action {
+        Action::ActivateAbility { targets, .. } => targets
+            .iter()
+            .flat_map(TargetSelection::targets)
+            .copied()
+            .collect(),
+        _ => unreachable!("only activations are collected"),
+    }
+}
+
 /// Player one activates `source`'s ability whose text starts with `prefix` at
 /// exactly `targets`, leaving it on the stack.
 fn activate_at(game: &mut Game, source: GameObjectId, prefix: &str, targets: &[Target]) {
     let action = activations(game, source, prefix)
         .into_iter()
-        .find(|action| match action {
-            Action::ActivateAbility {
-                targets: chosen, ..
-            } => chosen.iter().flat_map(TargetSelection::targets).eq(targets),
-            _ => false,
-        })
+        .find(|action| announced_targets(action) == targets)
         .unwrap_or_else(|| panic!("{prefix} can be activated at those targets"));
     game.apply(PlayerId::One, action).unwrap();
 }
 
 /// Player one's creature `attacker` is declared as an attacker and the
-/// declaration is finished, leaving player one with priority.
-fn attack_with(game: &mut Game, attacker: GameObjectId) {
+/// declaration is finished, with whatever that triggered still waiting.
+fn declare_attack(game: &mut Game, attacker: GameObjectId) {
     game.step = Step::DeclareAttackers;
     game.apply(
         PlayerId::One,
@@ -84,6 +91,11 @@ fn attack_with(game: &mut Game, attacker: GameObjectId) {
     )
     .unwrap();
     game.finish_declaring_attackers();
+}
+
+/// Player one attacks with `attacker` and whatever that triggers resolves.
+fn attack_with(game: &mut Game, attacker: GameObjectId) {
+    declare_attack(game, attacker);
     drain_pending(game);
 }
 
@@ -148,14 +160,7 @@ fn castable_targets(game: &Game, card: GameObjectId) -> Vec<Vec<Target>> {
 /// whose text starts with `prefix`, one per activation.
 fn activation_targets(game: &Game, source: GameObjectId, prefix: &str) -> Vec<Vec<Target>> {
     activations(game, source, prefix)
-        .into_iter()
-        .map(|action| match action {
-            Action::ActivateAbility { targets, .. } => targets
-                .iter()
-                .flat_map(TargetSelection::targets)
-                .copied()
-                .collect(),
-            _ => unreachable!("only activations are collected"),
-        })
+        .iter()
+        .map(announced_targets)
         .collect()
 }

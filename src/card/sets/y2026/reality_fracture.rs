@@ -158,25 +158,9 @@ const BEAST_TOKEN: TokenCharacteristics =
             "Simon Dominic",
         ));
 
-// One list again: several cards create this token.
-static HEARTWOOD_TOKEN_ABILITIES: [AbilityDef; 1] = [AbilityDef::activated_mana(
-    "{T}: Add {R} or {G}.",
-    &[CostDef::TapSource],
-    EffectDef::AddMana(AddManaEffectDef::choice(&[
-        ManaColor::Red,
-        ManaColor::Green,
-    ])),
-)];
-
-/// The predefined Heartwood token: a red and green artifact that taps for
-/// either of its colors.
-const HEARTWOOD_TOKEN: TokenCharacteristics =
-    TokenCharacteristics::artifact(&["Heartwood"], &[ManaColor::Red, ManaColor::Green])
-        .with_abilities(&HEARTWOOD_TOKEN_ABILITIES)
-        .with_art(CardArt::new(
-            "eb4bf635-04d7-4994-9f70-4ff573a767e7",
-            "Tianxing Xu",
-        ));
+const HEARTWOOD_TOKEN: TokenCharacteristics = crate::card::tokens::heartwood().with_art(
+    CardArt::new("eb4bf635-04d7-4994-9f70-4ff573a767e7", "Tianxing Xu"),
+);
 
 /// "Creature or planeswalker", as a target or as a group to count over.
 const A_CREATURE_OR_PLANESWALKER: ObjectPredicateDef = ObjectPredicateDef::AnyOf(&[
@@ -2700,7 +2684,7 @@ pub(in crate::card::sets) static TETHER_TECHNICIAN: CardRecord = CardRecord::new
             abilities::reach(),
             abilities::enters_trigger(
                 "When this creature enters, you may discard a card. When you do, this creature \
-             deals 2 damage to any target.",
+                 deals 2 damage to any target.",
                 EffectDef::May {
                     player: EffectRecipientDef::Controller,
                     effect: &EffectDef::Discard {
@@ -3045,7 +3029,7 @@ pub(in crate::card::sets) static HEXHAVEN_INVIGORATOR: CardRecord = CardRecord::
                     object: ObjectPredicateDef::HasType(CardType::Land),
                     minimum: 0,
                     maximum: ValueDef::TriggerEventAmount,
-                    reveal: true,
+                    reveal: false,
                     destination: ZoneKind::Battlefield,
                     placement: ZonePlacement::Top,
                     shuffle: true,
@@ -3313,7 +3297,7 @@ pub(in crate::card::sets) static SIMULACRUM_SHAPER: CardRecord = CardRecord::new
                     object: A_BASIC_LAND_CARD,
                     minimum: 0,
                     maximum: ValueDef::Constant(1),
-                    reveal: true,
+                    reveal: false,
                     destination: ZoneKind::Battlefield,
                     placement: ZonePlacement::Top,
                     shuffle: true,
@@ -3481,7 +3465,7 @@ pub(in crate::card::sets) static VINELASHER_ADEPT: CardRecord = CardRecord::new(
             ),
             abilities::typecycling!(
                 "Basic landcycling {2} ({2}, Discard this card: Search your library for a basic \
-             land card, reveal it, put it into your hand, then shuffle.)",
+                 land card, reveal it, put it into your hand, then shuffle.)",
                 &[CostDef::Mana(mana_cost!("{2}"))],
                 A_BASIC_LAND_CARD,
             ),
