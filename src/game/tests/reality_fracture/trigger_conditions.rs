@@ -203,6 +203,42 @@ fn lyra_tolarian_archangel_makes_nothing_after_only_two_draws() {
     }
 }
 
+/// Runs one of player one's upkeeps, reporting how many abilities it put on
+/// the stack or queued before anything resolved.
+fn take_an_upkeep(game: &mut Game) -> usize {
+    game.commit_next_turn(PlayerId::One, Vec::new());
+    let triggered = game.stack.len() + game.pending_triggers.len();
+    drain_pending(game);
+    triggered
+}
+
+/// "Mill three cards", cast from a copy made the other way one of these
+/// cards becomes prepared: "At the beginning of your upkeep, if this creature
+/// isn't prepared, it becomes prepared." Paradox Shaper arrives without a
+/// copy of its spell and has one from its first upkeep.
+#[test]
+fn omit_variables_mills_three_once_paradox_shaper_prepares_itself_at_upkeep() {
+    for prepared_engine in [false, true] {
+        let mut game = setup(prepared_engine);
+        stock_library(&mut game);
+        let shaper = settled(&mut game, cards::PARADOX_SHAPER);
+        assert!(!is_prepared(&game, shaper));
+        assert!(exiled_copies(&game, PlayerId::One).is_empty());
+
+        take_an_upkeep(&mut game);
+        let copies = exiled_copies(&game, PlayerId::One);
+        assert_eq!(copies.len(), 1);
+        assert_eq!(copies[0].1, "Omit Variables");
+
+        game.step = Step::PrecombatMain;
+        cast_copy(&mut game, copies[0].0, &[]);
+        drain_pending(&mut game);
+
+        assert_eq!(game.players[0].graveyard.len(), 3);
+        assert_eq!(game.players[0].library.len(), 7);
+    }
+}
+
 /// "Mill four cards. When you do, return target land card from your graveyard
 /// to the battlefield tapped": the target is chosen after the mill, so a land
 /// it just turned over can be the one.

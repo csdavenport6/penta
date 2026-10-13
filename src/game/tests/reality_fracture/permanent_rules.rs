@@ -228,6 +228,39 @@ fn hungering_puppetbeast_makes_a_heartwood_that_taps_for_red_or_green() {
     }
 }
 
+/// "When this Aura enters, tap enchanted creature. It becomes unprepared."
+/// The copy of its prepare spell goes with the designation, and the static
+/// ability then takes what the creature had.
+#[test]
+fn infinite_coursework_taps_and_unprepares_the_creature_it_enchants() {
+    for prepared_engine in [false, true] {
+        let mut game = setup(prepared_engine);
+        let emeritus = settled(&mut game, cards::EMERITUS_OF_IDEATION);
+        let prepared = |game: &Game| {
+            permanent(game, emeritus)
+                .designations
+                .contains(&PermanentDesignationDef::Prepared)
+        };
+        assert!(prepared(&game), "it enters prepared");
+        assert_eq!(game.players[0].exile.len(), 1, "its Ancestral Recall");
+
+        cast(
+            &mut game,
+            cards::INFINITE_COURSEWORK,
+            &[Target::Permanent(emeritus)],
+        );
+        drain_pending(&mut game);
+
+        assert!(permanent(&game, emeritus).tapped);
+        assert!(!prepared(&game));
+        assert!(game.players[0].exile.is_empty(), "the copy ceased to exist");
+        assert!(
+            !has_keyword(&game, emeritus, KeywordAbility::Flying),
+            "it loses all abilities"
+        );
+    }
+}
+
 /// "This creature has vigilance as long as you control a Jace planeswalker":
 /// yours, a planeswalker, and a Jace.
 #[test]
