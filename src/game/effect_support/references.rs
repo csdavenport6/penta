@@ -143,48 +143,55 @@ impl Game {
         scoped: ScopedEffect,
     ) -> crate::game::ResolvedEffectPayment {
         use crate::card::CostDef as Cost;
+        use crate::card::costs::ResolvingPaymentCostDef as Leaf;
         use crate::game::ResolvedEffectPayment as Resolved;
         let amount_of = |value| {
             u16::try_from(self.effect_value(value, object, context, scoped).max(0))
                 .unwrap_or(u16::MAX)
         };
-        match cost {
+        let leaf = match cost {
             Cost::Perform(program) => {
-                self.resolve_action_payment(*program, object, context, scoped, 1)
+                return self.resolve_action_payment(*program, object, context, scoped, 1);
             }
-            Cost::All(costs) => self.resolved_effect_costs(costs, object, context, scoped),
+            Cost::All(costs) => return self.resolved_effect_costs(costs, object, context, scoped),
             Cost::Parameter | Cost::Repeated { .. } | Cost::Choice(_) => {
-                self.resolved_program_cost(cost, object, context, scoped, None, None)
+                return self.resolved_program_cost(cost, object, context, scoped, None, None);
             }
-            Cost::Mana(cost) => Resolved::Mana(cost),
-            Cost::GenericMana(amount) => Resolved::Mana(crate::ManaCost::new(amount_of(amount), 0)),
-            Cost::ColoredMana { color, amount } => {
+            // The catalog asks the same narrowing before a card is accepted.
+            _ => cost
+                .resolving_payment_cost()
+                .expect("validated resolving payment cost"),
+        };
+        match leaf {
+            Leaf::Mana(cost) => Resolved::Mana(cost),
+            Leaf::GenericMana(amount) => Resolved::Mana(crate::ManaCost::new(amount_of(amount), 0)),
+            Leaf::ColoredMana { color, amount } => {
                 Resolved::Mana(crate::ManaCost::of_color(color, amount_of(amount)))
             }
-            Cost::ObjectManaCostReducedBy {
+            Leaf::ObjectManaCostReducedBy {
                 object: recipient,
                 generic,
             } => Resolved::Mana(
                 self.object_mana_cost_reduced_by(*recipient, generic, object, context, scoped),
             ),
-            Cost::PayLife(amount) => Resolved::Life(amount),
-            Cost::Life(amount) => Resolved::Life(amount_of(amount)),
-            Cost::Energy(amount) => Resolved::Energy(amount),
-            Cost::MillCards(amount) => Resolved::Mill(amount),
-            Cost::DiscardCards(amount) => Resolved::Discard(amount),
-            Cost::SacrificePermanent {
-                object: predicate,
-                controller: crate::card::PlayerRelation::You,
-            } => Resolved::SacrificePermanentMatching(predicate),
-            Cost::SacrificeCreaturesWithTotalPower(total) => {
+            Leaf::PayLife(amount) => Resolved::Life(amount),
+            Leaf::Life(amount) => Resolved::Life(amount_of(amount)),
+            Leaf::Energy(amount) => Resolved::Energy(amount),
+            Leaf::MillCards(amount) => Resolved::Mill(amount),
+            Leaf::DiscardCards(amount) => Resolved::Discard(amount),
+            Leaf::Discard(predicate) => Resolved::DiscardMatching(predicate),
+            Leaf::SacrificePermanent(predicate) => {
+                Resolved::SacrificePermanentMatching(predicate)
+            }
+            Leaf::SacrificeCreaturesWithTotalPower(total) => {
                 Resolved::SacrificeCreaturesWithTotalPower(total)
             }
-            Cost::MovePermanentMatching { object, zone } => {
+            Leaf::MovePermanentMatching { object, zone } => {
                 Resolved::MovePermanentMatching { object, zone }
             }
-            Cost::ChosenGenericMana => Resolved::ChosenGenericMana,
-            Cost::ChosenEnergy => Resolved::ChosenEnergy,
-            Cost::RemoveAnyNumberOfCounters {
+            Leaf::ChosenGenericMana => Resolved::ChosenGenericMana,
+            Leaf::ChosenEnergy => Resolved::ChosenEnergy,
+            Leaf::RemoveAnyNumberOfCounters {
                 object: recipient,
                 kind,
             } => self
@@ -200,11 +207,6 @@ impl Game {
                     object: crate::GameObjectId(0),
                     kind,
                 }),
-            Cost::Discard {
-                object: predicate,
-                quantity: crate::card::CostQuantityDef::Fixed(1),
-            } => Resolved::DiscardMatching(predicate),
-            _ => unreachable!("unsupported resolving payment cost reached execution"),
         }
     }
 

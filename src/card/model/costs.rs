@@ -448,6 +448,7 @@ pub const NO_COSTS: &[CostDef] = &[];
 
 include!("costs/list.rs");
 include!("costs/loyalty.rs");
+include!("costs/resolving.rs");
 include!("costs/text.rs");
 
 /// A basic land subtype used by type-changing effects and mana provenance.

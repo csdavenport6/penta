@@ -20,6 +20,15 @@ the bot-wire epoch.
 
 ## Unreleased
 
+- Catalog validation now rejects a resolving payment whose plain cost the
+  payment procedure cannot settle, such as `CostDef::RemoveCountersFromSource`
+  inside `PayOrDef::optional`. Such a definition previously validated and
+  panicked when the payment was offered. The check also covers a replacement
+  program's own `PayOr`, the effects it performs, and effect-created triggers,
+  whose costs were not inspected before. Validation and the procedure now share
+  `CostDef::resolving_payment_cost`. No built-in card changes; the protocol
+  and checkpoint versions are unchanged.
+
 - Declare Reality Fracture's 21 preparation cards and their eight alternate
   printings, and implement 15 of them on the prepare helpers. Seed Suture,
   Peer Review, Omit Variables, Vicious Verse, and Soul Tether are each printed

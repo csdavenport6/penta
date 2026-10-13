@@ -29,15 +29,17 @@ enum StaticPosition {
 pub(super) fn validate_ability_effect_context(
     ability: &AbilityDef,
 ) -> Result<(), EffectProgramContextError> {
+    // A replacement program has no ordinary effect tree, but it can still
+    // offer a payment of its own or perform an effect that does.
+    validate_ability_cost_program(ability).map_err(|operation| EffectProgramContextError {
+        context: "cost program",
+        operation,
+    })?;
     let Some(effect) = ability.declarative_effect() else {
         // Metadata-only and replacement programs do not execute this ordinary
         // effect tree through either runtime.
         return Ok(());
     };
-    validate_cost_program(effect, None).map_err(|operation| EffectProgramContextError {
-        context: "cost program",
-        operation,
-    })?;
     match ability.definition {
         DeclarativeAbilityDef::Static(definition) => {
             validate_static_effect(effect, definition.source_zones, StaticPosition::Root).map_err(
