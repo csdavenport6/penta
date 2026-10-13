@@ -24,9 +24,7 @@ starting the server. A linked worktree keeps its assignment in the ignored
 `web/.dev-port` file. Editor and agent previews that can only be configured
 with one fixed port should set `PENTA_DEV_PORT`; both the server and
 `dev:url` honour it, so the tool's configuration and the running server cannot
-drift apart. The checked-in `.claude/launch.json` pins its preview this way, so
-a shell outside that preview needs the same variable before `dev:url` names the
-preview's server. The client defaults to The Deck versus Goblins, and all
+drift apart. The client defaults to The Deck versus Goblins, and all
 game state stays in the browser. Development, production builds, and tests keep
 the Git-ignored WASM bindings current automatically. Cargo checks incrementally,
 and unchanged bindings skip `wasm-bindgen`.
@@ -70,8 +68,7 @@ For every change that can affect rendered output or user interaction:
 
 1. Start or restart the development server from the current worktree. Confirm
    that the URL reported by `pnpm run dev:url` is served by that process; do not
-   accept a fallback port or assume an older server picked up the change. A
-   preview started from `.claude/launch.json` serves its pinned port instead.
+   accept a fallback port or assume an older server picked up the change.
 2. Open the rendered application in a browser and inspect it visually. A build,
    DOM snapshot, or HTTP response is not a visual check.
 3. Check at least a 1280x720 laptop viewport for clipping, overlap, off-screen
