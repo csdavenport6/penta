@@ -20,6 +20,15 @@ the bot-wire epoch.
 
 ## Unreleased
 
+- Catalog validation now rejects a resolving payment whose plain cost the
+  payment procedure cannot settle, such as `CostDef::RemoveCountersFromSource`
+  inside `PayOrDef::optional`. Such a definition previously validated and
+  panicked when the payment was offered. The check also covers a replacement
+  program's own `PayOr`, the effects it performs, and effect-created triggers,
+  whose costs were not inspected before. Validation and the procedure now share
+  `CostDef::resolving_payment_cost`. No built-in card changes; the protocol
+  and checkpoint versions are unchanged.
+
 - Implement Generous Plunderer, Inti, Seneschal of the Sun, Agatha's Soul
   Cauldron, and Walk-In Closet // Forgotten Cellar with existing vocabulary,
   leaving Deep-Cavern Bat as the Vintage Cube's only card with whole-card

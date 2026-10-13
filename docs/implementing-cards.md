@@ -685,6 +685,17 @@ of a targeted spell. Each constructor takes the complete cost slice directly.
 The surrounding procedure determines which expressions it can execute;
 keep its runtime-support validation honest when adding a new expression there.
 
+A resolving payment settles a plain cost only when
+`CostDef::resolving_payment_cost` narrows it. That includes a replacement
+program's own `PayOr`, any payment in an effect it performs, and payments in
+effect-created triggers. Catalog validation rejects any other cost there, and
+the payment procedure matches the narrowed type exhaustively. To support a new
+plain resolving cost, add it to that narrowing: the compiler then requires its
+settlement arm, and validation needs no edit. Repeated, labeled, and
+scalar-choice costs keep their own lanes. `RemoveCountersFromSource` is an
+activation cost only; a resolving payment cannot yet remove counters from its
+source.
+
 `NO_COSTS` (`&[]`) expresses an alternative paid without paying a mana cost,
 such as Omniscience. It differs from `&[CostDef::Mana(mana_cost!("{0}"))]`:
 only the latter includes a mana payment. CR 601.2g checks the complete selected
