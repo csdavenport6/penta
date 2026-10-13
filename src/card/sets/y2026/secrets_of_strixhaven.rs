@@ -2,6 +2,8 @@
 
 use super::CardRecord;
 use super::PrintingRecord;
+use crate::CardPartId;
+use crate::PlayOptionId;
 use crate::TargetIndex;
 use crate::card::AbilityDef;
 use crate::card::AbilityPredicateDef;
@@ -9,6 +11,7 @@ use crate::card::AbilityTargetDef;
 use crate::card::AbilityTargetPredicate;
 use crate::card::ActivationTimingDef;
 use crate::card::AddManaEffectDef;
+use crate::card::AlternateSpellKind;
 use crate::card::AlternativeCastKindDef;
 use crate::card::AppliedEffectDef;
 use crate::card::AppliedRuleDef;
@@ -16,8 +19,12 @@ use crate::card::BattlefieldArrivalDef;
 use crate::card::BattlefieldEntryModificationDef;
 use crate::card::BindObjectsDef;
 use crate::card::CardArt;
+use crate::card::CardComposition;
+use crate::card::CardEffectStatus;
 use crate::card::CardNameDef;
+use crate::card::CardPart;
 use crate::card::CardRules;
+use crate::card::CardStructure;
 use crate::card::CardSupertype;
 use crate::card::CardType;
 use crate::card::CardTypeSet;
@@ -60,6 +67,7 @@ use crate::card::ObjectSetPredicateDef;
 use crate::card::PayOrDef;
 use crate::card::PerPlayerSelectionDef;
 use crate::card::PermanentDesignationDef;
+use crate::card::PlayOptionDef;
 use crate::card::PlayerRefDef;
 use crate::card::PlayerRelation;
 use crate::card::PlayerRuleDef;
@@ -70,6 +78,7 @@ use crate::card::ResolvedEffectDurationDef;
 use crate::card::RevealObjectsDef;
 use crate::card::ScaledValueDef;
 use crate::card::SpellCastQueryDef;
+use crate::card::SpellForm;
 use crate::card::SpellResolutionDestinationDef;
 use crate::card::StackTargetAggregationDef;
 use crate::card::StackTargetFilterDef;
@@ -105,6 +114,119 @@ pub const SET: crate::card::CardSet = crate::card::CardSet::new(&crate::card::Ca
 
 pub(in crate::card::sets) const DEFINITION: crate::card::sets::SetDefinition =
     crate::card::sets::SetDefinition::new(SET, CARDS, ADDITIONAL_PRINTINGS, file!());
+
+/// The parts and cast options of a preparation card (CR 722): `record` is
+/// the permanent, `name` and `alternate` the prepare spell printed with it.
+#[must_use]
+pub(in crate::card::sets) fn prepare(
+    record: &CardRecord,
+    name: &'static str,
+    alternate: &CardRules,
+) -> CardComposition {
+    let primary_name = record
+        .name
+        .split(" // ")
+        .next()
+        .expect("preparation card has a primary name");
+    CardComposition {
+        parts: vec![
+            CardPart::new(CardPartId::PRIMARY, primary_name, record.rules),
+            CardPart::new(CardPartId(1), name, *alternate),
+        ],
+        structure: CardStructure::AlternateSpell {
+            main: CardPartId::PRIMARY,
+            alternate: CardPartId(1),
+            kind: AlternateSpellKind::Prepare,
+        },
+        play_options: vec![
+            PlayOptionDef::cast(
+                PlayOptionId::DEFAULT,
+                primary_name,
+                SpellForm::Part(CardPartId::PRIMARY),
+                record.rules.mana_cost().expect("printed primary cost"),
+                CardEffectStatus::Implemented,
+            ),
+            PlayOptionDef::cast(
+                PlayOptionId(1),
+                name,
+                SpellForm::Part(CardPartId(1)),
+                alternate.mana_cost().expect("printed prepare spell cost"),
+                CardEffectStatus::Implemented,
+            ),
+        ],
+    }
+    .with_derived_spell_targets()
+}
+
+/// "This creature enters prepared." (CR 722.3a). A permanent without a prepare
+/// spell ignores it. A card that prints its own name overrides the text.
+#[must_use]
+pub(in crate::card::sets) const fn enters_prepared() -> AbilityDef {
+    AbilityDef::as_enters(
+        "This creature enters prepared.",
+        ReplacementEffectDef::ModifyBattlefieldEntry(BattlefieldEntryModificationDef::Designation(
+            PermanentDesignationDef::Prepared,
+        )),
+    )
+}
+
+/// "... becomes prepared." Does nothing to a permanent that is already
+/// prepared or has no prepare spell (CR 722.3a).
+#[must_use]
+pub(in crate::card::sets) const fn become_prepared(recipient: EffectRecipientDef) -> EffectDef {
+    EffectDef::SetDesignation {
+        object: recipient,
+        designation: PermanentDesignationDef::Prepared,
+        present: true,
+    }
+}
+
+/// "... becomes unprepared." (CR 722.3b). The copy of its prepare spell in
+/// exile ceases to exist.
+#[must_use]
+pub(in crate::card::sets) const fn become_unprepared(recipient: EffectRecipientDef) -> EffectDef {
+    EffectDef::SetDesignation {
+        object: recipient,
+        designation: PermanentDesignationDef::Prepared,
+        present: false,
+    }
+}
+
+/// "At the beginning of your upkeep, if this creature isn't prepared, it
+/// becomes prepared."
+#[must_use]
+pub(in crate::card::sets) const fn reprepare_at_upkeep() -> AbilityDef {
+    AbilityDef::triggered_if(
+        "At the beginning of your upkeep, if this creature isn't prepared, it becomes prepared.",
+        TriggerEventDef::StepBegins {
+            step: TurnStepDef::Upkeep,
+            player: PlayerRelation::You,
+        },
+        &TriggerConditionDef::Not(&TriggerConditionDef::SourceHasDesignation(
+            PermanentDesignationDef::Prepared,
+        )),
+        become_prepared(EffectRecipientDef::Source),
+    )
+}
+
+/// [`enters_prepared`] as most printings word it, with the mechanic's
+/// reminder text.
+#[must_use]
+pub(in crate::card::sets) const fn enters_prepared_with_reminder() -> AbilityDef {
+    enters_prepared().override_text(
+        "This creature enters prepared. (While it's prepared, you may cast a copy of its spell. \
+         Doing so unprepares it.)",
+    )
+}
+
+/// [`reprepare_at_upkeep`] with the same reminder text.
+#[must_use]
+pub(in crate::card::sets) const fn reprepare_at_upkeep_with_reminder() -> AbilityDef {
+    reprepare_at_upkeep().override_text(
+        "At the beginning of your upkeep, if this creature isn't prepared, it becomes prepared. \
+         (While it's prepared, you may cast a copy of its spell. Doing so unprepares it.)",
+    )
+}
 
 const SPIRIT_TOKEN: TokenCharacteristics =
     TokenCharacteristics::creature(&["Spirit"], &[ManaColor::Red, ManaColor::White], 2, 2)
@@ -1238,69 +1360,24 @@ pub(in crate::card::sets) static EMERITUS_OF_IDEATION: CardRecord = CardRecord::
     CardRules::new_creature(mana_cost!("{3}{U}{U}"), &["Human", "Wizard"], 5, 5).with_abilities(&[
         abilities::flying(),
         abilities::ward(&[CostDef::Mana(mana_cost!("{2}"))], "Ward {2}"),
-        AbilityDef::as_enters(
-            "This creature enters prepared.",
-            ReplacementEffectDef::ModifyBattlefieldEntry(
-                BattlefieldEntryModificationDef::Designation(PermanentDesignationDef::Prepared),
-            ),
-        ),
+        enters_prepared(),
         AbilityDef::triggered(
             "Whenever this creature attacks, you may exile eight cards from your \
                 graveyard. If you do, this creature becomes prepared.",
             TriggerEventDef::attacks(ObjectPredicateDef::Source),
             EffectDef::PayOr(PayOrDef::optional(
                 &[crate::card::actions::choose_exile_from_graveyard(8).as_cost()],
-                &EffectDef::SetDesignation {
-                    object: EffectRecipientDef::Source,
-                    designation: PermanentDesignationDef::Prepared,
-                    present: true,
-                },
+                &become_prepared(EffectRecipientDef::Source),
             )),
         ),
     ]),
 )
 .with_composition(|| {
-    use crate::card::{
-        AlternateSpellKind, CardComposition, CardEffectStatus, CardPart, CardStructure,
-        PlayOptionDef, SpellForm,
-    };
-    use crate::{CardPartId, PlayOptionId};
-    CardComposition {
-        parts: vec![
-            CardPart::new(
-                CardPartId::PRIMARY,
-                "Emeritus of Ideation",
-                EMERITUS_OF_IDEATION.rules,
-            ),
-            CardPart::new(
-                CardPartId(1),
-                "Ancestral Recall",
-                catalog_lea::ANCESTRAL_RECALL.rules,
-            ),
-        ],
-        structure: CardStructure::AlternateSpell {
-            main: CardPartId::PRIMARY,
-            alternate: CardPartId(1),
-            kind: AlternateSpellKind::Prepare,
-        },
-        play_options: vec![
-            PlayOptionDef::cast(
-                PlayOptionId::DEFAULT,
-                "Emeritus of Ideation",
-                SpellForm::Part(CardPartId::PRIMARY),
-                mana_cost!("{3}{U}{U}"),
-                CardEffectStatus::Implemented,
-            ),
-            PlayOptionDef::cast(
-                PlayOptionId(1),
-                "Ancestral Recall",
-                SpellForm::Part(CardPartId(1)),
-                mana_cost!("{U}"),
-                CardEffectStatus::Implemented,
-            ),
-        ],
-    }
-    .with_derived_spell_targets()
+    prepare(
+        &EMERITUS_OF_IDEATION,
+        "Ancestral Recall",
+        &catalog_lea::ANCESTRAL_RECALL.rules,
+    )
 });
 
 // SOS 46 — Encouraging Aviator // Jump

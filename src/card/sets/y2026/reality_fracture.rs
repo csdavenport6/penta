@@ -3,9 +3,7 @@
 use super::CardRecord;
 use super::PrintingRecord;
 use crate::Binding;
-use crate::CardPartId;
 use crate::ParentBinding;
-use crate::PlayOptionId;
 use crate::TargetIndex;
 use crate::card::AbilityDef;
 use crate::card::AbilityPredicateDef;
@@ -14,7 +12,6 @@ use crate::card::AbilityTargetPredicate;
 use crate::card::ActivationTimingDef;
 use crate::card::AddManaEffectDef;
 use crate::card::AggregateOperationDef;
-use crate::card::AlternateSpellKind;
 use crate::card::AlternativeCastKindDef;
 use crate::card::AppliedEffectDef;
 use crate::card::AppliedRuleDef;
@@ -23,11 +20,7 @@ use crate::card::BattlefieldArrivalDef;
 use crate::card::BattlefieldEntryModificationDef;
 use crate::card::BattlefieldEntryScalarChoiceDef;
 use crate::card::CardArt;
-use crate::card::CardComposition;
-use crate::card::CardEffectStatus;
-use crate::card::CardPart;
 use crate::card::CardRules;
-use crate::card::CardStructure;
 use crate::card::CardSupertype;
 use crate::card::CardType;
 use crate::card::CardTypeSet;
@@ -76,8 +69,6 @@ use crate::card::ObjectValueAggregateDef;
 use crate::card::ObjectValueDef;
 use crate::card::PayOrDef;
 use crate::card::PerPlayerSelectionDef;
-use crate::card::PermanentDesignationDef;
-use crate::card::PlayOptionDef;
 use crate::card::PlayerRefDef;
 use crate::card::PlayerRelation;
 use crate::card::PlayerRuleDef;
@@ -92,7 +83,6 @@ use crate::card::RevealAndClassifyCardsDef;
 use crate::card::RoundingDef;
 use crate::card::ScaledValueDef;
 use crate::card::SpellCastQueryDef;
-use crate::card::SpellForm;
 use crate::card::StaticApplyDef;
 use crate::card::SubtypeDef;
 use crate::card::SumValueDef;
@@ -121,6 +111,13 @@ use crate::card::sets::y2018::dominaria as catalog_dom;
 use crate::card::sets::y2021::innistrad_midnight_hunt as catalog_mid;
 use crate::card::sets::y2023::phyrexia_all_will_be_one as catalog_one;
 use crate::card::sets::y2025::aetherdrift::exhaust;
+use crate::card::sets::y2026::secrets_of_strixhaven::become_prepared;
+use crate::card::sets::y2026::secrets_of_strixhaven::become_unprepared;
+use crate::card::sets::y2026::secrets_of_strixhaven::enters_prepared;
+use crate::card::sets::y2026::secrets_of_strixhaven::enters_prepared_with_reminder;
+use crate::card::sets::y2026::secrets_of_strixhaven::prepare;
+use crate::card::sets::y2026::secrets_of_strixhaven::reprepare_at_upkeep;
+use crate::card::sets::y2026::secrets_of_strixhaven::reprepare_at_upkeep_with_reminder;
 
 /// Printed set identity and stable catalog slug.
 pub const SET: crate::card::CardSet = crate::card::CardSet::new(&crate::card::CardSetMetadata {
@@ -198,108 +195,6 @@ const HEARTWOOD_TOKEN: TokenCharacteristics = crate::card::tokens::heartwood().w
 const TREASURE_TOKEN: TokenCharacteristics = crate::card::tokens::treasure().with_art(
     CardArt::new("03992f88-7a15-4234-9bed-b7617d7ff09c", "Alayna Danner"),
 );
-
-/// The parts and cast options of a preparation card (CR 722): `record` is
-/// the permanent, `name` and `alternate` the prepare spell printed with it.
-fn prepare(record: &CardRecord, name: &'static str, alternate: &CardRules) -> CardComposition {
-    let primary_name = record
-        .name
-        .split(" // ")
-        .next()
-        .expect("preparation card has a primary name");
-    CardComposition {
-        parts: vec![
-            CardPart::new(CardPartId::PRIMARY, primary_name, record.rules),
-            CardPart::new(CardPartId(1), name, *alternate),
-        ],
-        structure: CardStructure::AlternateSpell {
-            main: CardPartId::PRIMARY,
-            alternate: CardPartId(1),
-            kind: AlternateSpellKind::Prepare,
-        },
-        play_options: vec![
-            PlayOptionDef::cast(
-                PlayOptionId::DEFAULT,
-                primary_name,
-                SpellForm::Part(CardPartId::PRIMARY),
-                record.rules.mana_cost().expect("printed primary cost"),
-                CardEffectStatus::Implemented,
-            ),
-            PlayOptionDef::cast(
-                PlayOptionId(1),
-                name,
-                SpellForm::Part(CardPartId(1)),
-                alternate.mana_cost().expect("printed prepare spell cost"),
-                CardEffectStatus::Implemented,
-            ),
-        ],
-    }
-    .with_derived_spell_targets()
-}
-
-/// "This creature enters prepared." (CR 722.3a). A permanent without a prepare
-/// spell ignores it. A card that prints its own name overrides the text.
-const fn enters_prepared() -> AbilityDef {
-    AbilityDef::as_enters(
-        "This creature enters prepared.",
-        ReplacementEffectDef::ModifyBattlefieldEntry(BattlefieldEntryModificationDef::Designation(
-            PermanentDesignationDef::Prepared,
-        )),
-    )
-}
-
-/// "... becomes prepared." Does nothing to a permanent that is already
-/// prepared or has no prepare spell (CR 722.3a).
-const fn become_prepared(recipient: EffectRecipientDef) -> EffectDef {
-    EffectDef::SetDesignation {
-        object: recipient,
-        designation: PermanentDesignationDef::Prepared,
-        present: true,
-    }
-}
-
-/// "... becomes unprepared." (CR 722.3b). The copy of its prepare spell in
-/// exile ceases to exist.
-const fn become_unprepared(recipient: EffectRecipientDef) -> EffectDef {
-    EffectDef::SetDesignation {
-        object: recipient,
-        designation: PermanentDesignationDef::Prepared,
-        present: false,
-    }
-}
-
-/// "At the beginning of your upkeep, if this creature isn't prepared, it
-/// becomes prepared."
-const fn reprepare_at_upkeep() -> AbilityDef {
-    AbilityDef::triggered_if(
-        "At the beginning of your upkeep, if this creature isn't prepared, it becomes prepared.",
-        TriggerEventDef::StepBegins {
-            step: TurnStepDef::Upkeep,
-            player: PlayerRelation::You,
-        },
-        &TriggerConditionDef::Not(&TriggerConditionDef::SourceHasDesignation(
-            PermanentDesignationDef::Prepared,
-        )),
-        become_prepared(EffectRecipientDef::Source),
-    )
-}
-
-/// [`enters_prepared`] as most printings word it, with the mechanic's
-/// reminder text.
-const fn enters_prepared_with_reminder() -> AbilityDef {
-    enters_prepared().override_text(
-        "This creature enters prepared. (While it's prepared, you may cast a copy of its spell. \
-         Doing so unprepares it.)",
-    )
-}
-
-/// [`reprepare_at_upkeep`] with the same reminder text.
-const fn reprepare_at_upkeep_with_reminder() -> AbilityDef {
-    reprepare_at_upkeep().override_text(
-        "At the beginning of your upkeep, if this creature isn't prepared, it becomes prepared. \
-         (While it's prepared, you may cast a copy of its spell. Doing so unprepares it.)",
-    )
-}
 
 // Each prepare spell below is printed on three cards. One constant apiece
 // keeps the copies the same spell. A card that is still unsupported is a
