@@ -19,8 +19,7 @@ categories:
   pools, modern mana rules, and separate banned/restricted policies checked on
   September 12, 2026. The [initial event corpus](legacy-vintage.md) includes
   sixteen Legacy lists and eight Vintage lists, with sideboards and explicit
-  unsupported-card coverage. Reality Fracture (FRA) is in both pools and in
-  neither Standard profile.
+  unsupported-card coverage.
 - **Standard: ISD-M14 (final pre-Theros snapshot)**: Innistrad, Dark Ascension,
   Avacyn Restored, Magic 2013, Return to Ravnica, Gatecrash, Dragon's Maze, and
   Magic 2014. It exposes all ten built-in decks from SCG events and testing in

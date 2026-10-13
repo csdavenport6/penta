@@ -24,11 +24,8 @@ card declarations -> declarative card model -> prepared compiler -> prepared pro
 
 The following are invariants:
 
-- Card declarations do not mention lowering, intrinsics, executors, or
-  prepared program types. The prepare mechanic (CR 722) is ordinary card
-  vocabulary and unrelated to this engine; the
-  [card guide](implementing-cards.md#definition-boundary) keeps the two
-  vocabularies apart.
+- Card declarations do not mention preparation, intrinsics, executors, or
+  prepared program types.
 - The card schema does not carry optimization hints or prepared payloads.
 - `src/card` does not depend on `src/prepared_engine`.
 - The declarative model remains available for validation, traversal,
