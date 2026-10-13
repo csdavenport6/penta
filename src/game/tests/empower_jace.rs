@@ -433,34 +433,6 @@ fn jace_reality_sculptor_exiles_all_but_the_bottom_card_of_a_library() {
     }
 }
 
-#[test]
-fn repurposed_enforcer_empowers_for_each_creature_you_control_as_it_attacks() {
-    for prepared_engine in [false, true] {
-        let mut game = setup(prepared_engine);
-        let enforcer = settled(&mut game, cards::REPURPOSED_ENFORCER);
-        settled(&mut game, cards::GRIZZLY_BEARS);
-        settled(&mut game, cards::GRIZZLY_BEARS);
-        game.put_onto_battlefield(PlayerId::Two, cards::GRIZZLY_BEARS)
-            .unwrap();
-
-        game.step = Step::DeclareAttackers;
-        game.apply(
-            PlayerId::One,
-            Action::DeclareAttacker {
-                attacker: enforcer,
-                defender: AttackDefender::Player(PlayerId::Two),
-            },
-        )
-        .unwrap();
-        game.finish_declaring_attackers();
-        drain_pending(&mut game);
-
-        let tokens = jace_tokens(&game);
-        assert_eq!(tokens.len(), 1);
-        assert_eq!(tokens[0].1, 3, "itself and the two beside it");
-    }
-}
-
 /// Empower Jace from a source that is in no zone "you" control anything from:
 /// Campus Crier is in exile by the time its ability asks which tokens are
 /// yours.

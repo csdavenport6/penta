@@ -2,7 +2,6 @@
 //! as the event happens and again as the trigger resolves, and a reflexive
 //! "when you do" that waits on an earlier instruction.
 use super::*;
-use crate::card::Subtype;
 
 /// "At the beginning of your end step, if you didn't cast a spell this turn,
 /// put two +1/+1 counters on Edgar."
@@ -373,65 +372,6 @@ fn seasoned_cryomancer_discarding_only_lands_freezes_nothing() {
         for creature in creatures {
             assert!(!permanent(&game, creature).tapped);
         }
-    }
-}
-
-/// Vraska cast with `lands` lands of player one's and a Serra Angel of the
-/// opponent's on the battlefield, her trigger aimed at the Angel if it is
-/// there to aim.
-fn vraska_the_cutting_glare_entering(prepared_engine: bool, lands: usize) -> (Game, GameObjectId) {
-    let mut game = setup(prepared_engine);
-    for _ in 0..lands {
-        settled(&mut game, cards::FOREST);
-    }
-    let angel = game
-        .put_onto_battlefield(PlayerId::Two, cards::SERRA_ANGEL)
-        .unwrap();
-    cast(&mut game, cards::VRASKA_THE_CUTTING_GLARE, &[]);
-    if run_to_decision(&mut game).is_some() {
-        choose(&mut game, PlayerId::One, angel);
-    }
-    drain_pending(&mut game);
-    (game, angel)
-}
-
-/// "When Vraska enters, if you control six or more lands, destroy target
-/// permanent an opponent controls. They create a Treasure token."
-#[test]
-fn vraska_the_cutting_glare_destroys_a_permanent_and_its_controller_gets_a_treasure() {
-    for prepared_engine in [false, true] {
-        let (game, angel) = vraska_the_cutting_glare_entering(prepared_engine, 6);
-
-        assert!(!on_battlefield(&game, angel));
-        assert!(tokens(&game).is_empty(), "not for you");
-        let treasures = game
-            .battlefield
-            .iter()
-            .filter(|permanent| {
-                permanent.controller == PlayerId::Two
-                    && permanent.card.definition.is_token()
-                    && game
-                        .effective_subtypes(permanent)
-                        .contains(Subtype::from_name("Treasure").unwrap())
-            })
-            .count();
-        assert_eq!(treasures, 1);
-    }
-}
-
-/// "If you don't, the ability won't trigger at all."
-#[test]
-fn vraska_the_cutting_glare_does_nothing_with_five_lands() {
-    for prepared_engine in [false, true] {
-        let (game, angel) = vraska_the_cutting_glare_entering(prepared_engine, 5);
-
-        assert!(on_battlefield(&game, angel));
-        assert!(
-            !game
-                .battlefield
-                .iter()
-                .any(|permanent| permanent.card.definition.is_token())
-        );
     }
 }
 

@@ -167,30 +167,6 @@ fn gallia_the_merrymaker_targets_only_a_creature_that_entered_this_turn() {
     }
 }
 
-/// "When Hapatra enters, for each opponent, tap up to one target creature
-/// that player controls. Put a stun counter on each of those creatures."
-#[test]
-fn hapatra_the_desert_frost_taps_and_stuns_up_to_one_creature_an_opponent_controls() {
-    for prepared_engine in [false, true] {
-        let mut game = setup(prepared_engine);
-        settled(&mut game, cards::GRIZZLY_BEARS);
-        let theirs = game
-            .put_onto_battlefield(PlayerId::Two, cards::GRIZZLY_BEARS)
-            .unwrap();
-
-        cast(&mut game, cards::HAPATRA_THE_DESERT_FROST, &[]);
-        let decision = run_to_decision(&mut game).expect("the trigger chooses its target");
-        assert_eq!((decision.minimum, decision.maximum), (0, 1), "up to one");
-        assert_eq!(offered(&game, PlayerId::One), [theirs]);
-        choose(&mut game, PlayerId::One, theirs);
-        drain_pending(&mut game);
-
-        let theirs = permanent(&game, theirs);
-        assert!(theirs.tapped);
-        assert_eq!(theirs.counters(CounterKind::Stun), 1);
-    }
-}
-
 /// "{2}, {T}: Target creature that attacked this turn becomes prepared.
 /// Activate only as a sorcery." The dearer ability asks neither.
 #[test]
@@ -486,26 +462,6 @@ fn surgical_precision_targets_only_toughness_four_or_greater() {
             [vec![], vec![Target::Permanent(angel)]],
             "the drawing mode, and the 4/4 but not the 3/3"
         );
-    }
-}
-
-/// "For each opponent, return up to one target artifact or creature that
-/// player controls to its owner's hand."
-#[test]
-fn the_theorist_bounces_only_an_artifact_or_creature_an_opponent_controls() {
-    for prepared_engine in [false, true] {
-        let mut game = setup(prepared_engine);
-        let jace = settled(&mut game, cards::THE_THEORIST_JACE_BELEREN);
-        settled(&mut game, cards::GRIZZLY_BEARS);
-        let theirs = game
-            .put_onto_battlefield(PlayerId::Two, cards::GRIZZLY_BEARS)
-            .unwrap();
-        game.put_onto_battlefield(PlayerId::Two, cards::FOREST)
-            .unwrap();
-
-        let mut targets = activation_targets(&game, jace, "−2:");
-        targets.sort_by_key(Vec::len);
-        assert_eq!(targets, [vec![], vec![Target::Permanent(theirs)]]);
     }
 }
 

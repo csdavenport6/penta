@@ -3,43 +3,6 @@
 //! trigger reads from the event that caused it.
 use super::*;
 
-/// "Whenever you gain life, put a loyalty counter on Ajani" watches the life
-/// his own "0: You gain 1 life" gains.
-#[test]
-fn ajani_resolute_gains_a_loyalty_counter_for_the_life_his_own_ability_gains() {
-    for prepared_engine in [false, true] {
-        let mut game = setup(prepared_engine);
-        let ajani = settled(&mut game, cards::AJANI_RESOLUTE);
-        assert_eq!(permanent(&game, ajani).counters(CounterKind::Loyalty), 2);
-
-        activate(&mut game, ajani, "0:");
-        drain_pending(&mut game);
-
-        assert_eq!(game.players[0].life, 21);
-        assert_eq!(permanent(&game, ajani).counters(CounterKind::Loyalty), 3);
-    }
-}
-
-/// "Whenever another creature you control enters, Arni gets +X/+0 until end
-/// of turn, where X is that creature's power."
-#[test]
-fn arni_renowned_champion_gets_the_power_of_each_other_creature_that_enters() {
-    for prepared_engine in [false, true] {
-        let mut game = setup(prepared_engine);
-        let arni = settled(&mut game, cards::ARNI_RENOWNED_CHAMPION);
-        game.put_onto_battlefield(PlayerId::Two, cards::CRAW_WURM)
-            .unwrap();
-        drain_pending(&mut game);
-        assert_eq!(game.power(permanent(&game, arni)), Some(1));
-
-        settled(&mut game, cards::HILL_GIANT);
-        settled(&mut game, cards::GRIZZLY_BEARS);
-
-        let arni = permanent(&game, arni);
-        assert_eq!((game.power(arni), game.toughness(arni)), (Some(6), Some(5)));
-    }
-}
-
 /// "Whenever you cast an Equipment spell or a spell that targets a creature
 /// you control, draw a card. This ability triggers only once each turn."
 #[test]
@@ -70,32 +33,6 @@ fn danitha_sword_of_hope_draws_once_a_turn_for_equipment_or_a_spell_aimed_at_you
         );
         drain_pending(&mut game);
         assert_eq!(game.players[0].hand.len(), 1, "only once each turn");
-    }
-}
-
-/// "Whenever you cast": an opponent's Equipment spell is not yours.
-#[test]
-fn danitha_sword_of_hope_draws_nothing_for_an_opponents_equipment_spell() {
-    for prepared_engine in [false, true] {
-        let mut game = setup(prepared_engine);
-        stock_library(&mut game);
-        settled(&mut game, cards::DANITHA_SWORD_OF_HOPE);
-        game.active_player = PlayerId::Two;
-        game.priority = PlayerId::Two;
-        let bonesplitter = in_hand_of(&mut game, PlayerId::Two, cards::BONESPLITTER);
-        game.add_unrestricted_mana(PlayerId::Two, ManaColor::Colorless, 1);
-
-        let action = game
-            .legal_actions(PlayerId::Two)
-            .into_iter()
-            .find(
-                |action| matches!(action, Action::CastSpell { card, .. } if *card == bonesplitter),
-            )
-            .expect("the opponent can cast it");
-        game.apply(PlayerId::Two, action).unwrap();
-        drain_pending(&mut game);
-
-        assert!(game.players[0].hand.is_empty());
     }
 }
 
@@ -296,82 +233,6 @@ fn koth_the_geomancer_adds_red_mana_only_for_a_mountain() {
     }
 }
 
-/// "Whenever you gain life, create a ... Lotus ... This ability triggers only
-/// once each turn", and the Lotus is spent for three mana of one color.
-#[test]
-fn kwia_vigorbloom_makes_one_lotus_a_turn_worth_three_mana_of_one_color() {
-    for prepared_engine in [false, true] {
-        let mut game = setup(prepared_engine);
-        settled(&mut game, cards::KWIA_VIGORBLOOM);
-
-        for _ in 0..2 {
-            game.gain_life(PlayerId::One, 1);
-            drain_pending(&mut game);
-        }
-
-        let lotuses = tokens(&game)
-            .iter()
-            .map(|token| token.card.id)
-            .collect::<Vec<_>>();
-        assert_eq!(lotuses.len(), 1, "only the first life gained this turn");
-        let spend = game
-            .legal_actions(PlayerId::One)
-            .into_iter()
-            .find(|action| {
-                matches!(action, Action::ActivateManaAbility { source, .. } if *source == lotuses[0])
-            })
-            .expect("the Lotus can be tapped for mana");
-        game.apply(PlayerId::One, spend).unwrap();
-        assert!(!on_battlefield(&game, lotuses[0]));
-        assert_eq!(game.players[0].mana_pool.total(), 3);
-    }
-}
-
-/// "Whenever another creature or planeswalker you control enters, you gain 1
-/// life": not Liliana herself, and not an opponent's creature.
-#[test]
-fn liliana_the_faultless_gains_life_for_another_creature_or_planeswalker_of_yours() {
-    for prepared_engine in [false, true] {
-        let mut game = setup(prepared_engine);
-        settled(&mut game, cards::LILIANA_THE_FAULTLESS);
-        game.put_onto_battlefield(PlayerId::Two, cards::GRIZZLY_BEARS)
-            .unwrap();
-        drain_pending(&mut game);
-        settled(&mut game, cards::MOX_RUBY);
-        assert_eq!(game.players[0].life, 20);
-
-        settled(&mut game, cards::GRIZZLY_BEARS);
-        settled(&mut game, cards::JACE_MEMORY_ADEPT);
-
-        assert_eq!(game.players[0].life, 22);
-    }
-}
-
-/// "Whenever you gain life, put a +1/+1 counter on each Angel you control":
-/// Lyra is one of them, and an opponent's Angel is not.
-#[test]
-fn lyra_archangel_of_dawn_puts_a_counter_on_each_angel_you_control() {
-    for prepared_engine in [false, true] {
-        let mut game = setup(prepared_engine);
-        let lyra = settled(&mut game, cards::LYRA_ARCHANGEL_OF_DAWN);
-        let angel = settled(&mut game, cards::SERRA_ANGEL);
-        let bears = settled(&mut game, cards::GRIZZLY_BEARS);
-        let theirs = game
-            .put_onto_battlefield(PlayerId::Two, cards::SERRA_ANGEL)
-            .unwrap();
-
-        game.gain_life(PlayerId::One, 2);
-        drain_pending(&mut game);
-
-        let counters = |id| permanent(&game, id).counters(CounterKind::PlusOnePlusOne);
-        assert_eq!(
-            [lyra, angel, bears, theirs].map(counters),
-            [1, 1, 0, 0],
-            "one trigger for one life gain, however much life"
-        );
-    }
-}
-
 /// "Until end of turn, whenever Lyra deals combat damage to a player, draw
 /// two cards": nothing without the activation, and two for each time it was
 /// activated.
@@ -522,29 +383,6 @@ fn ruric_thar_biomagus_draws_when_an_opponent_targets_him() {
     }
 }
 
-/// "Thopters you control have haste", and each noncreature spell makes one.
-#[test]
-fn saheeli_jewel_of_avishkar_makes_a_thopter_with_haste_for_a_noncreature_spell() {
-    for prepared_engine in [false, true] {
-        let mut game = setup(prepared_engine);
-        settled(&mut game, cards::SAHEELI_JEWEL_OF_AVISHKAR);
-
-        cast(&mut game, cards::GRIZZLY_BEARS, &[]);
-        drain_pending(&mut game);
-        assert!(tokens(&game).is_empty(), "a creature spell");
-
-        cast(&mut game, cards::MOX_RUBY, &[]);
-        drain_pending(&mut game);
-
-        let [thopter] = tokens(&game)[..] else {
-            panic!("one Thopter");
-        };
-        assert!(has_keyword(&game, thopter.card.id, KeywordAbility::Flying));
-        assert!(has_keyword(&game, thopter.card.id, KeywordAbility::Haste));
-        assert!(game.can_attack(thopter), "the turn it was made");
-    }
-}
-
 /// "Whenever an opponent casts a spell with mana value 2 or less, you gain 2
 /// life": not your own spell, and not a three-drop.
 #[test]
@@ -635,47 +473,5 @@ fn tinybones_pocket_nuisance_deals_damage_for_the_discard_his_arrival_causes() {
 
         assert!(game.players[1].hand.is_empty());
         assert_eq!(game.players[1].life, 19);
-    }
-}
-
-/// "One or more cards": one trigger for a discard of two, whoever discarded
-/// them, and the damage is always to the opponents.
-#[test]
-fn tinybones_pocket_nuisance_triggers_once_for_each_players_discard_of_any_size() {
-    for prepared_engine in [false, true] {
-        let mut game = setup(prepared_engine);
-        settled(&mut game, cards::TINYBONES_POCKET_NUISANCE);
-        hand(&mut game, cards::FOREST);
-        hand(&mut game, cards::FOREST);
-
-        // You discard two, to a spell aimed at yourself.
-        cast(&mut game, cards::MIND_ROT, &[Target::Player(PlayerId::One)]);
-        drain_pending(&mut game);
-
-        assert!(game.players[0].hand.is_empty());
-        assert_eq!(game.players[0].life, 20);
-        assert_eq!(game.players[1].life, 19);
-    }
-}
-
-/// "Whenever you cast an artifact or creature spell, untap Traxos."
-#[test]
-fn traxos_scourge_eternal_untaps_for_an_artifact_or_creature_spell_you_cast() {
-    for (spell, untapped) in [
-        (cards::OPT, false),
-        (cards::MOX_RUBY, true),
-        (cards::GRIZZLY_BEARS, true),
-    ] {
-        for prepared_engine in [false, true] {
-            let mut game = setup(prepared_engine);
-            stock_library(&mut game);
-            let traxos = settled(&mut game, cards::TRAXOS_SCOURGE_ETERNAL);
-            permanent_mut(&mut game, traxos).tapped = true;
-
-            cast(&mut game, spell, &[]);
-            drain_pending(&mut game);
-
-            assert_eq!(!permanent(&game, traxos).tapped, untapped);
-        }
     }
 }

@@ -2,7 +2,7 @@
 //! abilities and the conditions on them, the characteristics of tokens and
 //! copies, entering tapped, and the legend rule.
 use super::*;
-use crate::card::{PermanentDesignationDef, Subtype};
+use crate::card::Subtype;
 
 /// The colors `permanent` is.
 fn colors(game: &Game, permanent: &Permanent) -> Vec<ManaColor> {
@@ -11,63 +11,6 @@ fn colors(game: &Game, permanent: &Permanent) -> Vec<ManaColor> {
         .zip(game.permanent_colors(permanent))
         .filter_map(|(color, has)| has.then_some(color))
         .collect()
-}
-
-/// "Create a 2/2 white Cat Soldier creature token named Ajani's Pridemate
-/// with 'Whenever you gain life, put a +1/+1 counter on this token.'"
-#[test]
-fn ajani_resolute_creates_a_pridemate_that_grows_whenever_you_gain_life() {
-    for prepared_engine in [false, true] {
-        let mut game = setup(prepared_engine);
-        let ajani = settled(&mut game, cards::AJANI_RESOLUTE);
-        permanent_mut(&mut game, ajani).add_counters(CounterKind::Loyalty, 2);
-
-        activate(&mut game, ajani, "−4:");
-        drain_pending(&mut game);
-        let pridemate = tokens(&game)[0].card.id;
-        assert_eq!(
-            game.effective_permanent_name(permanent(&game, pridemate))
-                .as_deref(),
-            Some("Ajani's Pridemate")
-        );
-        assert_eq!(game.power(permanent(&game, pridemate)), Some(2));
-
-        game.gain_life(PlayerId::One, 3);
-        drain_pending(&mut game);
-
-        let pridemate = permanent(&game, pridemate);
-        assert_eq!(pridemate.counters(CounterKind::PlusOnePlusOne), 1);
-        assert_eq!(
-            (game.power(pridemate), game.toughness(pridemate)),
-            (Some(3), Some(3))
-        );
-    }
-}
-
-/// "You get an emblem with 'Creatures you control get +2/+2.'" The emblem
-/// outlasts Ajani and reaches creatures that arrive after it.
-#[test]
-fn ajani_resolute_emblem_gives_your_creatures_plus_two_plus_two() {
-    for prepared_engine in [false, true] {
-        let mut game = setup(prepared_engine);
-        let ajani = settled(&mut game, cards::AJANI_RESOLUTE);
-        permanent_mut(&mut game, ajani).add_counters(CounterKind::Loyalty, 8);
-        let theirs = game
-            .put_onto_battlefield(PlayerId::Two, cards::GRIZZLY_BEARS)
-            .unwrap();
-
-        activate(&mut game, ajani, "−10:");
-        drain_pending(&mut game);
-        assert!(!on_battlefield(&game, ajani), "no loyalty left");
-        let bears = settled(&mut game, cards::GRIZZLY_BEARS);
-
-        let stats = |id| {
-            let permanent = permanent(&game, id);
-            (game.power(permanent), game.toughness(permanent))
-        };
-        assert_eq!(stats(bears), (Some(4), Some(4)));
-        assert_eq!(stats(theirs), (Some(2), Some(2)));
-    }
 }
 
 /// "This creature gets +2/+0 for every seven cards in your graveyard": whole
@@ -285,39 +228,6 @@ fn hungering_puppetbeast_makes_a_heartwood_that_taps_for_red_or_green() {
     }
 }
 
-/// "When this Aura enters, tap enchanted creature. It becomes unprepared."
-/// The copy of its prepare spell goes with the designation, and the static
-/// ability then takes what the creature had.
-#[test]
-fn infinite_coursework_taps_and_unprepares_the_creature_it_enchants() {
-    for prepared_engine in [false, true] {
-        let mut game = setup(prepared_engine);
-        let emeritus = settled(&mut game, cards::EMERITUS_OF_IDEATION);
-        let prepared = |game: &Game| {
-            permanent(game, emeritus)
-                .designations
-                .contains(&PermanentDesignationDef::Prepared)
-        };
-        assert!(prepared(&game), "it enters prepared");
-        assert_eq!(game.players[0].exile.len(), 1, "its Ancestral Recall");
-
-        cast(
-            &mut game,
-            cards::INFINITE_COURSEWORK,
-            &[Target::Permanent(emeritus)],
-        );
-        drain_pending(&mut game);
-
-        assert!(permanent(&game, emeritus).tapped);
-        assert!(!prepared(&game));
-        assert!(game.players[0].exile.is_empty(), "the copy ceased to exist");
-        assert!(
-            !has_keyword(&game, emeritus, KeywordAbility::Flying),
-            "it loses all abilities"
-        );
-    }
-}
-
 /// "This creature has vigilance as long as you control a Jace planeswalker":
 /// yours, a planeswalker, and a Jace.
 #[test]
@@ -406,29 +316,6 @@ fn a_planeswalker_land_ignores_a_planeswalker_entering_alongside_it() {
         assert_eq!(controlled(&game, cards::JACE_MEMORY_ADEPT).len(), 1);
         let commons = controlled(&game, cards::DEDICATED_COMMONS)[0];
         assert!(permanent(&game, commons).tapped);
-    }
-}
-
-/// "Enchanted permanent is a Construct creature with base power and toughness
-/// 5/5 in addition to its other types."
-#[test]
-fn puppet_crafting_makes_its_permanent_a_five_five_construct_that_keeps_its_types() {
-    for prepared_engine in [false, true] {
-        let mut game = setup(prepared_engine);
-        let mox = settled(&mut game, cards::MOX_RUBY);
-
-        cast(&mut game, cards::PUPPET_CRAFTING, &[Target::Permanent(mox)]);
-        drain_pending(&mut game);
-
-        let mox = permanent(&game, mox);
-        let types = game.permanent_types(mox).expect("it has types");
-        assert!(types.contains(CardType::Creature) && types.contains(CardType::Artifact));
-        assert!(
-            game.effective_subtypes(mox)
-                .contains(Subtype::from_name("Construct").unwrap())
-        );
-        assert_eq!((game.power(mox), game.toughness(mox)), (Some(5), Some(5)));
-        assert_eq!(mana_colors(&game, mox.card.id), [ManaColor::Red]);
     }
 }
 

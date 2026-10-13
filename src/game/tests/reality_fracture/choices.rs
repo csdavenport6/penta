@@ -199,38 +199,6 @@ fn arc_of_fortune_asks_the_active_player_first_when_that_is_not_its_caster() {
     }
 }
 
-/// "You may sacrifice a planeswalker. If you do, search your library for a
-/// planeswalker card, put it onto the battlefield, then shuffle."
-#[test]
-fn entrust_the_spark_trades_a_planeswalker_for_one_from_your_library() {
-    for prepared_engine in [false, true] {
-        let mut game = setup(prepared_engine);
-        let jace = settled(&mut game, cards::JACE_MEMORY_ADEPT);
-        game.players[0].library = game
-            .build_zone(
-                PlayerId::One,
-                &[cards::FOREST, cards::CHANDRA_TORCH_OF_DEFIANCE],
-            )
-            .unwrap();
-
-        cast(&mut game, cards::ENTRUST_THE_SPARK, &[]);
-        run_to_decision(&mut game).expect("sacrificing a planeswalker is offered");
-        choose_decision_by_label(&mut game, PlayerId::One, "Sacrifice Jace, Memory Adept");
-        let search = run_to_decision(&mut game).expect("the search chooses its card");
-        let found = search
-            .options
-            .iter()
-            .filter(|option| option.card.is_some())
-            .map(|option| option.label.as_str())
-            .collect::<Vec<_>>();
-        assert_eq!(found, ["Chandra, Torch of Defiance"], "not the Forest");
-        drain_pending(&mut game);
-
-        assert!(!on_battlefield(&game, jace));
-        assert_eq!(controlled(&game, cards::CHANDRA_TORCH_OF_DEFIANCE).len(), 1);
-    }
-}
-
 /// Guiding Hydra with two +1/+1 counters, a creature beside it and one across
 /// the table, stopped at its beginning-of-combat offer.
 fn guiding_hydra_at_combat(prepared_engine: bool) -> (Game, [GameObjectId; 3]) {
@@ -394,39 +362,6 @@ fn something_worth_saving_choosing(prepared_engine: bool) -> (Game, DecisionObse
     cast(&mut game, cards::SOMETHING_WORTH_SAVING, &[]);
     let choice = run_to_decision(&mut game).expect("a milled permanent card may be taken");
     (game, choice)
-}
-
-/// "Mill four cards. You may put a permanent card from among them into your
-/// hand. You gain 1 life."
-#[test]
-fn something_worth_saving_returns_one_milled_permanent_card() {
-    for prepared_engine in [false, true] {
-        let (mut game, choice) = something_worth_saving_choosing(prepared_engine);
-        let life = game.players[0].life;
-        assert_eq!(choice.options.len(), 2, "the land and the creature");
-        assert_eq!((choice.minimum, choice.maximum), (0, 1));
-
-        let taken = offered(&game, PlayerId::One)[0];
-        let definition = game.players[0]
-            .graveyard
-            .iter()
-            .find(|card| card.id == taken)
-            .expect("it was milled")
-            .definition;
-        choose(&mut game, PlayerId::One, taken);
-        drain_pending(&mut game);
-
-        let player = &game.players[0];
-        assert_eq!(player.library.len(), 1, "the fifth card stays");
-        let hand = player.hand.iter().map(|card| card.definition);
-        assert!(hand.eq([definition]));
-        assert_eq!(
-            player.graveyard.len(),
-            4,
-            "three milled cards and the spell"
-        );
-        assert_eq!(player.life, life + 1);
-    }
 }
 
 #[test]

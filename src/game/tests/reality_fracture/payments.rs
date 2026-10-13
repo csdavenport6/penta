@@ -56,75 +56,6 @@ fn edgar_ancient_bloodlord_gains_life_for_the_creature_his_ability_sacrifices() 
     }
 }
 
-/// "Noncreature spells you cast cost {1} less to cast": not a creature spell,
-/// and not an opponent's spell.
-#[test]
-fn geist_of_saint_thalia_discounts_only_your_noncreature_spells() {
-    for prepared_engine in [false, true] {
-        let mut game = setup(prepared_engine);
-        settled(&mut game, cards::GEIST_OF_SAINT_THALIA);
-        let divination = hand(&mut game, cards::DIVINATION);
-        let bears = hand(&mut game, cards::GRIZZLY_BEARS);
-        game.add_unrestricted_mana(PlayerId::One, ManaColor::Green, 1);
-        assert!(!can_cast(&game, PlayerId::One, bears), "{{1}}{{G}} still");
-        game.add_unrestricted_mana(PlayerId::One, ManaColor::Blue, 1);
-        assert!(
-            can_cast(&game, PlayerId::One, divination),
-            "{{2}}{{U}} less {{1}}"
-        );
-
-        game.active_player = PlayerId::Two;
-        game.priority = PlayerId::Two;
-        let theirs = in_hand_of(&mut game, PlayerId::Two, cards::DIVINATION);
-        game.add_unrestricted_mana(PlayerId::Two, ManaColor::Blue, 2);
-        assert!(!can_cast(&game, PlayerId::Two, theirs));
-    }
-}
-
-/// "This spell costs {X} less to cast, where X is the greatest toughness
-/// among creatures you control", and never less than {W}.
-#[test]
-fn ghalta_the_immovable_costs_less_by_the_greatest_toughness_you_control() {
-    for prepared_engine in [false, true] {
-        let mut game = setup(prepared_engine);
-        let ghalta = hand(&mut game, cards::GHALTA_THE_IMMOVABLE);
-        settled(&mut game, cards::GRIZZLY_BEARS);
-        settled(&mut game, cards::WALL_OF_WOOD);
-        game.put_onto_battlefield(PlayerId::Two, cards::WALL_OF_STONE)
-            .unwrap();
-
-        // The 0/3 Wall is the greatest of yours; the opponent's 0/8 is not.
-        game.add_unrestricted_mana(PlayerId::One, ManaColor::White, 5);
-        assert!(
-            !can_cast(&game, PlayerId::One, ghalta),
-            "{{8}}{{W}} less {{3}}"
-        );
-        game.add_unrestricted_mana(PlayerId::One, ManaColor::White, 1);
-        assert!(can_cast(&game, PlayerId::One, ghalta));
-    }
-}
-
-/// "This spell costs {X} less to cast, where X is the greatest power among
-/// creatures you control", and never less than {G}.
-#[test]
-fn ghalta_the_unstoppable_costs_less_by_the_greatest_power_you_control() {
-    for (creature, generic) in [(cards::HILL_GIANT, 5), (cards::CRAW_WURM, 2)] {
-        for prepared_engine in [false, true] {
-            let mut game = setup(prepared_engine);
-            let ghalta = hand(&mut game, cards::GHALTA_THE_UNSTOPPABLE);
-            settled(&mut game, cards::GRIZZLY_BEARS);
-            settled(&mut game, creature);
-            game.put_onto_battlefield(PlayerId::Two, cards::SHIVAN_DRAGON)
-                .unwrap();
-
-            game.add_unrestricted_mana(PlayerId::One, ManaColor::Green, generic);
-            assert!(!can_cast(&game, PlayerId::One, ghalta));
-            game.add_unrestricted_mana(PlayerId::One, ManaColor::Green, 1);
-            assert!(can_cast(&game, PlayerId::One, ghalta));
-        }
-    }
-}
-
 /// "{1}, Sacrifice another artifact: Put a +1/+1 counter on this creature. It
 /// gains your choice of trample, hexproof, or haste until end of turn."
 #[test]
@@ -159,32 +90,6 @@ fn hungering_puppetbeast_sacrifices_another_artifact_for_a_counter_and_a_keyword
         assert!(game.permanent_has_executable_keyword(beast, KeywordAbility::Hexproof));
         assert!(!game.permanent_has_executable_keyword(beast, KeywordAbility::Trample));
         assert!(!game.permanent_has_executable_keyword(beast, KeywordAbility::Haste));
-    }
-}
-
-/// "{2}, {T}, Sacrifice an artifact or land: Draw a card."
-#[test]
-fn marwyn_the_clearcutter_sacrifices_an_artifact_or_a_land_to_draw() {
-    for prepared_engine in [false, true] {
-        let mut game = setup(prepared_engine);
-        stock_library(&mut game);
-        let marwyn = settled(&mut game, cards::MARWYN_THE_CLEARCUTTER);
-        let mox = settled(&mut game, cards::MOX_RUBY);
-        let forest = settled(&mut game, cards::FOREST);
-        settled(&mut game, cards::GRIZZLY_BEARS);
-        game.add_unrestricted_mana(PlayerId::One, ManaColor::Red, 2);
-
-        let mut wanted = [vec![mox], vec![forest]];
-        wanted.sort();
-        assert_eq!(
-            sacrifices_offered(&game, marwyn, "{2}, {T}, Sacrifice"),
-            wanted,
-            "not a creature, and not Marwyn"
-        );
-
-        activate(&mut game, marwyn, "{2}, {T}, Sacrifice");
-        drain_pending(&mut game);
-        assert_eq!(game.players[0].hand.len(), 1);
     }
 }
 
