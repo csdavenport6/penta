@@ -26,6 +26,7 @@ use crate::card::CardType;
 use crate::card::CardTypeSet;
 use crate::card::ChoiceVisibilityDef;
 use crate::card::ChooseDef;
+use crate::card::ChooseForEachPlayerDef;
 use crate::card::ComparisonDef;
 use crate::card::ConditionValueDef;
 use crate::card::ConditionalStaticEffectDef;
@@ -67,6 +68,7 @@ use crate::card::ObjectSetPredicateDef;
 use crate::card::ObjectValueAggregateDef;
 use crate::card::ObjectValueDef;
 use crate::card::PayOrDef;
+use crate::card::PerPlayerSelectionDef;
 use crate::card::PlayerRefDef;
 use crate::card::PlayerRelation;
 use crate::card::PlayerRuleDef;
@@ -7265,21 +7267,16 @@ pub(in crate::card::sets) static WINTER_TORMENTED_LONER: CardRecord = CardRecord
                     &EffectDef::ReflexiveTrigger(&AbilityDef::triggered(
                         "When you do, each opponent sacrifices a creature of their choice.",
                         TriggerEventDef::Reflexive,
-                        EffectDef::Choose(ChooseDef {
-                            binding: ObjectChoiceBindingDef::Object(Binding!("sacrificed")),
-                            unchosen: None,
-                            chooser: PlayerRefDef::Opponent,
-                            candidates: ObjectSetDef::Query(ObjectQueryDef::controlled_by(
-                                ObjectPredicateDef::HasType(CardType::Creature),
-                                &[ZoneKind::Battlefield],
-                                PlayerSetDef::Related(PlayerRelation::Opponent),
-                            )),
-                            exclude: None,
-                            minimum: 1,
-                            maximum: 1,
+                        EffectDef::ChooseForEachPlayer(ChooseForEachPlayerDef {
+                            player: EffectRecipientDef::Opponent,
+                            zone: ZoneKind::Battlefield,
+                            candidates: ObjectPredicateDef::HasType(CardType::Creature),
+                            selection: PerPlayerSelectionDef::Count(ValueDef::Constant(1)),
+                            chosen: Binding!("sacrifices"),
+                            unchosen: Binding!("unchosen_sacrifices"),
                             visibility: ChoiceVisibilityDef::Public,
-                            then: &EffectDef::sacrifice(EffectRecipientDef::object(
-                                ObjectRefDef::Binding(Binding!("sacrificed")),
+                            then: &EffectDef::sacrifice(EffectRecipientDef::objects(
+                                ObjectSetDef::Binding(Binding!("sacrifices")),
                             )),
                         }),
                     )),
