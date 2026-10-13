@@ -3,7 +3,9 @@
 use super::CardRecord;
 use super::PrintingRecord;
 use crate::Binding;
+use crate::CardPartId;
 use crate::ParentBinding;
+use crate::PlayOptionId;
 use crate::TargetIndex;
 use crate::card::AbilityDef;
 use crate::card::AbilityPredicateDef;
@@ -12,6 +14,7 @@ use crate::card::AbilityTargetPredicate;
 use crate::card::ActivationTimingDef;
 use crate::card::AddManaEffectDef;
 use crate::card::AggregateOperationDef;
+use crate::card::AlternateSpellKind;
 use crate::card::AlternativeCastKindDef;
 use crate::card::AppliedEffectDef;
 use crate::card::AppliedRuleDef;
@@ -20,7 +23,11 @@ use crate::card::BattlefieldArrivalDef;
 use crate::card::BattlefieldEntryModificationDef;
 use crate::card::BattlefieldEntryScalarChoiceDef;
 use crate::card::CardArt;
+use crate::card::CardComposition;
+use crate::card::CardEffectStatus;
+use crate::card::CardPart;
 use crate::card::CardRules;
+use crate::card::CardStructure;
 use crate::card::CardSupertype;
 use crate::card::CardType;
 use crate::card::CardTypeSet;
@@ -69,6 +76,8 @@ use crate::card::ObjectValueAggregateDef;
 use crate::card::ObjectValueDef;
 use crate::card::PayOrDef;
 use crate::card::PerPlayerSelectionDef;
+use crate::card::PermanentDesignationDef;
+use crate::card::PlayOptionDef;
 use crate::card::PlayerRefDef;
 use crate::card::PlayerRelation;
 use crate::card::PlayerRuleDef;
@@ -83,6 +92,7 @@ use crate::card::RevealAndClassifyCardsDef;
 use crate::card::RoundingDef;
 use crate::card::ScaledValueDef;
 use crate::card::SpellCastQueryDef;
+use crate::card::SpellForm;
 use crate::card::StaticApplyDef;
 use crate::card::SubtypeDef;
 use crate::card::SumValueDef;
@@ -111,12 +121,6 @@ use crate::card::sets::y2018::dominaria as catalog_dom;
 use crate::card::sets::y2021::innistrad_midnight_hunt as catalog_mid;
 use crate::card::sets::y2023::phyrexia_all_will_be_one as catalog_one;
 use crate::card::sets::y2025::aetherdrift::exhaust;
-use crate::card::sets::y2026::secrets_of_strixhaven::become_prepared;
-use crate::card::sets::y2026::secrets_of_strixhaven::become_unprepared;
-use crate::card::sets::y2026::secrets_of_strixhaven::enters_prepared;
-use crate::card::sets::y2026::secrets_of_strixhaven::enters_prepared_with_reminder;
-use crate::card::sets::y2026::secrets_of_strixhaven::reprepare_at_upkeep;
-use crate::card::sets::y2026::secrets_of_strixhaven::reprepare_at_upkeep_with_reminder;
 
 /// Printed set identity and stable catalog slug.
 pub const SET: crate::card::CardSet = crate::card::CardSet::new(&crate::card::CardSetMetadata {
@@ -195,10 +199,112 @@ const TREASURE_TOKEN: TokenCharacteristics = crate::card::tokens::treasure().wit
     CardArt::new("03992f88-7a15-4234-9bed-b7617d7ff09c", "Alayna Danner"),
 );
 
+/// The parts and cast options of a preparation card (CR 722): `record` is
+/// the permanent, `name` and `alternate` the prepare spell printed with it.
+fn prepare(record: &CardRecord, name: &'static str, alternate: &CardRules) -> CardComposition {
+    let primary_name = record
+        .name
+        .split(" // ")
+        .next()
+        .expect("preparation card has a primary name");
+    CardComposition {
+        parts: vec![
+            CardPart::new(CardPartId::PRIMARY, primary_name, record.rules),
+            CardPart::new(CardPartId(1), name, *alternate),
+        ],
+        structure: CardStructure::AlternateSpell {
+            main: CardPartId::PRIMARY,
+            alternate: CardPartId(1),
+            kind: AlternateSpellKind::Prepare,
+        },
+        play_options: vec![
+            PlayOptionDef::cast(
+                PlayOptionId::DEFAULT,
+                primary_name,
+                SpellForm::Part(CardPartId::PRIMARY),
+                record.rules.mana_cost().expect("printed primary cost"),
+                CardEffectStatus::Implemented,
+            ),
+            PlayOptionDef::cast(
+                PlayOptionId(1),
+                name,
+                SpellForm::Part(CardPartId(1)),
+                alternate.mana_cost().expect("printed prepare spell cost"),
+                CardEffectStatus::Implemented,
+            ),
+        ],
+    }
+    .with_derived_spell_targets()
+}
+
+/// "This creature enters prepared." (CR 722.3a). A permanent without a prepare
+/// spell ignores it. A card that prints its own name overrides the text.
+const fn enters_prepared() -> AbilityDef {
+    AbilityDef::as_enters(
+        "This creature enters prepared.",
+        ReplacementEffectDef::ModifyBattlefieldEntry(BattlefieldEntryModificationDef::Designation(
+            PermanentDesignationDef::Prepared,
+        )),
+    )
+}
+
+/// "... becomes prepared." Does nothing to a permanent that is already
+/// prepared or has no prepare spell (CR 722.3a).
+const fn become_prepared(recipient: EffectRecipientDef) -> EffectDef {
+    EffectDef::SetDesignation {
+        object: recipient,
+        designation: PermanentDesignationDef::Prepared,
+        present: true,
+    }
+}
+
+/// "... becomes unprepared." (CR 722.3b). The copy of its prepare spell in
+/// exile ceases to exist.
+const fn become_unprepared(recipient: EffectRecipientDef) -> EffectDef {
+    EffectDef::SetDesignation {
+        object: recipient,
+        designation: PermanentDesignationDef::Prepared,
+        present: false,
+    }
+}
+
+/// "At the beginning of your upkeep, if this creature isn't prepared, it
+/// becomes prepared."
+const fn reprepare_at_upkeep() -> AbilityDef {
+    AbilityDef::triggered_if(
+        "At the beginning of your upkeep, if this creature isn't prepared, it becomes prepared.",
+        TriggerEventDef::StepBegins {
+            step: TurnStepDef::Upkeep,
+            player: PlayerRelation::You,
+        },
+        &TriggerConditionDef::Not(&TriggerConditionDef::SourceHasDesignation(
+            PermanentDesignationDef::Prepared,
+        )),
+        become_prepared(EffectRecipientDef::Source),
+    )
+}
+
+/// [`enters_prepared`] as most printings word it, with the mechanic's
+/// reminder text.
+const fn enters_prepared_with_reminder() -> AbilityDef {
+    enters_prepared().override_text(
+        "This creature enters prepared. (While it's prepared, you may cast a copy of its spell. \
+         Doing so unprepares it.)",
+    )
+}
+
+/// [`reprepare_at_upkeep`] with the same reminder text.
+const fn reprepare_at_upkeep_with_reminder() -> AbilityDef {
+    reprepare_at_upkeep().override_text(
+        "At the beginning of your upkeep, if this creature isn't prepared, it becomes prepared. \
+         (While it's prepared, you may cast a copy of its spell. Doing so unprepares it.)",
+    )
+}
+
 // Each prepare spell below is printed on three cards. One constant apiece
-// keeps the copies the same spell. A card that is still unsupported gives
-// neither part rules, since an unsupported card exposes no clause; it takes
-// its spell's constant when its creature gains rules.
+// keeps the copies the same spell. A card that is still unsupported is a
+// plain unsupported record, since an unsupported card exposes no clause; it
+// takes its spell's constant when its creature gains rules.
 
 /// The prepare spell of Blossom-Blessed Angel, Emergency Phytomedic, and
 /// Vigorbloom Vanguard.
@@ -448,23 +554,17 @@ pub(in crate::card::sets) static ACADEMIC_ASCENT: CardRecord = CardRecord::new(
 );
 
 // FRA 3 — Blossom-Blessed Angel // Seed Suture
-pub(in crate::card::sets) static BLOSSOM_BLESSED_ANGEL: CardRecord = CardRecord::new_prepare(
+pub(in crate::card::sets) static BLOSSOM_BLESSED_ANGEL: CardRecord = CardRecord::new(
     "Blossom-Blessed Angel // Seed Suture",
     "5e77fbf0-9d1f-4e7d-a02e-43065d11b0d9",
     "Joshua Raphael",
-    &[
-        (
-            "Blossom-Blessed Angel",
-            CardRules::new_creature(mana_cost!("{3}{W}"), &["Angel", "Cleric"], 2, 4)
-                .with_abilities(&[
-                    abilities::flying(),
-                    abilities::vigilance(),
-                    enters_prepared_with_reminder(),
-                ]),
-        ),
-        ("Seed Suture", SEED_SUTURE),
-    ],
-);
+    CardRules::new_creature(mana_cost!("{3}{W}"), &["Angel", "Cleric"], 2, 4).with_abilities(&[
+        abilities::flying(),
+        abilities::vigilance(),
+        enters_prepared_with_reminder(),
+    ]),
+)
+.with_composition(|| prepare(&BLOSSOM_BLESSED_ANGEL, "Seed Suture", &SEED_SUTURE));
 
 // FRA 4 — Campus Crier
 pub(in crate::card::sets) static CAMPUS_CRIER: CardRecord = CardRecord::new(
@@ -1149,14 +1249,11 @@ pub(in crate::card::sets) static CRYOTHEORY_ADEPT: CardRecord = CardRecord::new(
 // FRA 28 — Diviner of Victory // Unwind History
 // Audit: unsupported — Diviner of Victory needs a trigger event for scrying or surveilling,
 // published wherever a scry or surveil of at least one card is performed.
-pub(in crate::card::sets) static DIVINER_OF_VICTORY: CardRecord = CardRecord::new_prepare(
+pub(in crate::card::sets) static DIVINER_OF_VICTORY: CardRecord = CardRecord::new(
     "Diviner of Victory // Unwind History",
     "0853bb80-8664-432a-8457-600139fd96d5",
     "Justyna Dura",
-    &[
-        ("Diviner of Victory", CardRules::unsupported()),
-        ("Unwind History", CardRules::unsupported()),
-    ],
+    CardRules::unsupported(),
 );
 
 // FRA 29 — Divining Duelist
@@ -1561,25 +1658,19 @@ pub(in crate::card::sets) static SEASONED_CRYOMANCER: CardRecord = CardRecord::n
 );
 
 // FRA 39 — Semester Foreseer // Peer Review
-pub(in crate::card::sets) static SEMESTER_FORESEER: CardRecord = CardRecord::new_prepare(
+pub(in crate::card::sets) static SEMESTER_FORESEER: CardRecord = CardRecord::new(
     "Semester Foreseer // Peer Review",
     "7e5a640b-fd88-4b5a-9dfc-1d8f5a5cef41",
     "Alix Branwyn",
-    &[
-        (
-            "Semester Foreseer",
-            CardRules::new_creature(mana_cost!("{3}{U}"), &["Human", "Wizard"], 3, 4)
-                .with_abilities(&[
-                    enters_prepared_with_reminder(),
-                    abilities::enters_trigger(
-                        "When this creature enters, surveil 1.",
-                        abilities::surveil(ValueDef::Constant(1)),
-                    ),
-                ]),
+    CardRules::new_creature(mana_cost!("{3}{U}"), &["Human", "Wizard"], 3, 4).with_abilities(&[
+        enters_prepared_with_reminder(),
+        abilities::enters_trigger(
+            "When this creature enters, surveil 1.",
+            abilities::surveil(ValueDef::Constant(1)),
         ),
-        ("Peer Review", PEER_REVIEW),
-    ],
-);
+    ]),
+)
+.with_composition(|| prepare(&SEMESTER_FORESEER, "Peer Review", &PEER_REVIEW));
 
 // FRA 40 — Sphinx of False Conclusions
 pub(in crate::card::sets) static SPHINX_OF_FALSE_CONCLUSIONS: CardRecord = CardRecord::new(
@@ -1828,81 +1919,76 @@ const fn draw_seven_once_hand_is_gone<const ACTIVE: bool>() -> EffectDef {
     }
 }
 
-pub(in crate::card::sets) static VARIABLE_CHASER: CardRecord = CardRecord::new_prepare(
+pub(in crate::card::sets) static VARIABLE_CHASER: CardRecord = CardRecord::new(
     "Variable Chaser // Arc of Fortune",
     "e3afedb1-bf9d-4e31-9700-433514cc29b1",
     "Kai Carpenter",
-    &[
-        (
-            "Variable Chaser",
-            CardRules::new_creature(mana_cost!("{2}{U}"), &["Human", "Wizard"], 2, 3)
-                .with_abilities(&[
-                    abilities::flying(),
-                    abilities::prowess(),
-                    enters_prepared_with_reminder(),
-                ]),
-        ),
-        (
-            "Arc of Fortune",
-            CardRules::new_sorcery(mana_cost!("{2}{U}")).with_ability(AbilityDef::spell(
-                "Each player may discard their hand and draw seven cards.",
-                // Both players answer, the active player first, before either
-                // hand moves (CR 101.4), so the effect is two questions and
-                // then one of four outcomes rather than one player's whole
-                // turn followed by the other's. The first answer is public,
-                // and no answer is published on its own, so the second
-                // player's options are worded to say what it was.
-                EffectDef::ChooseEffect {
-                    player: THE_ACTIVE_PLAYER,
-                    choices: &[
-                        EffectChoiceDef {
-                            label: "Discard your hand and draw seven cards",
-                            effect: EffectDef::ChooseEffect {
-                                player: THE_NONACTIVE_PLAYER,
-                                choices: &[
-                                    EffectChoiceDef {
-                                        label: "Discard your hand and draw seven cards too",
-                                        effect: EffectDef::Sequence(&[
-                                            discard_hand(EffectRecipientDef::EachPlayer),
-                                            draw_seven_once_hand_is_gone::<true>(),
-                                            draw_seven_once_hand_is_gone::<false>(),
-                                        ]),
-                                    },
-                                    EffectChoiceDef {
-                                        label: "Keep your hand",
-                                        effect: EffectDef::Sequence(&[
-                                            discard_hand(THE_ACTIVE_PLAYER),
-                                            draw_seven_once_hand_is_gone::<true>(),
-                                        ]),
-                                    },
-                                ],
-                            },
+    CardRules::new_creature(mana_cost!("{2}{U}"), &["Human", "Wizard"], 2, 3).with_abilities(&[
+        abilities::flying(),
+        abilities::prowess(),
+        enters_prepared_with_reminder(),
+    ]),
+)
+.with_composition(|| {
+    const ALTERNATE: CardRules =
+        CardRules::new_sorcery(mana_cost!("{2}{U}")).with_ability(AbilityDef::spell(
+            "Each player may discard their hand and draw seven cards.",
+            // Both players answer, the active player first, before either
+            // hand moves (CR 101.4), so the effect is two questions and
+            // then one of four outcomes rather than one player's whole
+            // turn followed by the other's. The first answer is public,
+            // and no answer is published on its own, so the second
+            // player's options are worded to say what it was.
+            EffectDef::ChooseEffect {
+                player: THE_ACTIVE_PLAYER,
+                choices: &[
+                    EffectChoiceDef {
+                        label: "Discard your hand and draw seven cards",
+                        effect: EffectDef::ChooseEffect {
+                            player: THE_NONACTIVE_PLAYER,
+                            choices: &[
+                                EffectChoiceDef {
+                                    label: "Discard your hand and draw seven cards too",
+                                    effect: EffectDef::Sequence(&[
+                                        discard_hand(EffectRecipientDef::EachPlayer),
+                                        draw_seven_once_hand_is_gone::<true>(),
+                                        draw_seven_once_hand_is_gone::<false>(),
+                                    ]),
+                                },
+                                EffectChoiceDef {
+                                    label: "Keep your hand",
+                                    effect: EffectDef::Sequence(&[
+                                        discard_hand(THE_ACTIVE_PLAYER),
+                                        draw_seven_once_hand_is_gone::<true>(),
+                                    ]),
+                                },
+                            ],
                         },
-                        EffectChoiceDef {
-                            label: "Keep your hand",
-                            effect: EffectDef::ChooseEffect {
-                                player: THE_NONACTIVE_PLAYER,
-                                choices: &[
-                                    EffectChoiceDef {
-                                        label: "Discard your hand and draw seven cards",
-                                        effect: EffectDef::Sequence(&[
-                                            discard_hand(THE_NONACTIVE_PLAYER),
-                                            draw_seven_once_hand_is_gone::<false>(),
-                                        ]),
-                                    },
-                                    EffectChoiceDef {
-                                        label: "Keep your hand too",
-                                        effect: EffectDef::None,
-                                    },
-                                ],
-                            },
+                    },
+                    EffectChoiceDef {
+                        label: "Keep your hand",
+                        effect: EffectDef::ChooseEffect {
+                            player: THE_NONACTIVE_PLAYER,
+                            choices: &[
+                                EffectChoiceDef {
+                                    label: "Discard your hand and draw seven cards",
+                                    effect: EffectDef::Sequence(&[
+                                        discard_hand(THE_NONACTIVE_PLAYER),
+                                        draw_seven_once_hand_is_gone::<false>(),
+                                    ]),
+                                },
+                                EffectChoiceDef {
+                                    label: "Keep your hand too",
+                                    effect: EffectDef::None,
+                                },
+                            ],
                         },
-                    ],
-                },
-            )),
-        ),
-    ],
-);
+                    },
+                ],
+            },
+        ));
+    prepare(&VARIABLE_CHASER, "Arc of Fortune", &ALTERNATE)
+});
 
 // FRA 48 — Apex Witchstalker
 pub(in crate::card::sets) static APEX_WITCHSTALKER: CardRecord = CardRecord::new(
@@ -1942,14 +2028,11 @@ pub(in crate::card::sets) static APEX_WITCHSTALKER: CardRecord = CardRecord::new
 // FRA 49 — Bloodline Recollector // Ancestral Craving
 // Audit: unsupported — Bloodline Recollector needs the creatures-died-this-turn count readable in
 // an intervening-if condition; the runtime evaluates it as 0 there.
-pub(in crate::card::sets) static BLOODLINE_RECOLLECTOR: CardRecord = CardRecord::new_prepare(
+pub(in crate::card::sets) static BLOODLINE_RECOLLECTOR: CardRecord = CardRecord::new(
     "Bloodline Recollector // Ancestral Craving",
     "4fcc913e-f736-460a-b24b-022fa2e861b9",
     "Cynthia Sheppard",
-    &[
-        ("Bloodline Recollector", CardRules::unsupported()),
-        ("Ancestral Craving", CardRules::unsupported()),
-    ],
+    CardRules::unsupported(),
 );
 
 // FRA 50 — Break Under Pressure
@@ -2425,32 +2508,28 @@ pub(in crate::card::sets) static THEORETICAL_NECROMANCER: CardRecord = CardRecor
 );
 
 // FRA 70 — Void Extrapolator // Omit Variables
-pub(in crate::card::sets) static VOID_EXTRAPOLATOR: CardRecord = CardRecord::new_prepare(
+pub(in crate::card::sets) static VOID_EXTRAPOLATOR: CardRecord = CardRecord::new(
     "Void Extrapolator // Omit Variables",
     "0eae2efb-bf25-48ee-9c07-9098008110ad",
     "Valera Lutfullina",
-    &[
-        (
-            "Void Extrapolator",
-            CardRules::new_creature(mana_cost!("{1}{B}"), &["Aetherborn", "Warlock"], 2, 2)
-                .with_abilities(&crate::ability_list![
-                    [enters_prepared_with_reminder()],
-                    threshold(&[AbilityDef::static_ability(
-                        "Threshold — This creature gets +1/+1 as long as there are seven or \
-                         more cards in your graveyard.",
-                        EffectDef::StaticApply {
-                            recipient: EffectRecipientDef::Source,
-                            effect: AppliedEffectDef::modify_power_toughness(
-                                ValueDef::Constant(1),
-                                ValueDef::Constant(1),
-                            ),
-                        },
-                    )]),
-                ]),
-        ),
-        ("Omit Variables", OMIT_VARIABLES),
-    ],
-);
+    CardRules::new_creature(mana_cost!("{1}{B}"), &["Aetherborn", "Warlock"], 2, 2).with_abilities(
+        &crate::ability_list![
+            [enters_prepared_with_reminder()],
+            threshold(&[AbilityDef::static_ability(
+                "Threshold — This creature gets +1/+1 as long as there are seven or \
+                 more cards in your graveyard.",
+                EffectDef::StaticApply {
+                    recipient: EffectRecipientDef::Source,
+                    effect: AppliedEffectDef::modify_power_toughness(
+                        ValueDef::Constant(1),
+                        ValueDef::Constant(1),
+                    ),
+                },
+            )]),
+        ],
+    ),
+)
+.with_composition(|| prepare(&VOID_EXTRAPOLATOR, "Omit Variables", &OMIT_VARIABLES));
 
 // FRA 71 — Vraska's Final Mercy
 pub(in crate::card::sets) static VRASKA_S_FINAL_MERCY: CardRecord = CardRecord::new(
@@ -2859,29 +2938,25 @@ pub(in crate::card::sets) static FULMINOUS_FORTE: CardRecord = CardRecord::new(
 );
 
 // FRA 85 — Hallway Heckler // Vicious Verse
-pub(in crate::card::sets) static HALLWAY_HECKLER: CardRecord = CardRecord::new_prepare(
+pub(in crate::card::sets) static HALLWAY_HECKLER: CardRecord = CardRecord::new(
     "Hallway Heckler // Vicious Verse",
     "7e324816-552f-455d-97c4-5ea6b26d2e6e",
     "Gustavo Pelissari",
-    &[
-        (
-            "Hallway Heckler",
-            CardRules::new_creature(mana_cost!("{2}{R}"), &["Elemental", "Sorcerer"], 2, 3)
-                .with_abilities(&[
-                    enters_prepared_with_reminder(),
-                    AbilityDef::activated(
-                        "{T}, Discard a card: Draw a card.",
-                        &[
-                            CostDef::TapSource,
-                            CostDef::discard(ObjectPredicateDef::Any),
-                        ],
-                        abilities::draw_cards(ValueDef::Constant(1)),
-                    ),
-                ]),
-        ),
-        ("Vicious Verse", VICIOUS_VERSE),
-    ],
-);
+    CardRules::new_creature(mana_cost!("{2}{R}"), &["Elemental", "Sorcerer"], 2, 3).with_abilities(
+        &[
+            enters_prepared_with_reminder(),
+            AbilityDef::activated(
+                "{T}, Discard a card: Draw a card.",
+                &[
+                    CostDef::TapSource,
+                    CostDef::discard(ObjectPredicateDef::Any),
+                ],
+                abilities::draw_cards(ValueDef::Constant(1)),
+            ),
+        ],
+    ),
+)
+.with_composition(|| prepare(&HALLWAY_HECKLER, "Vicious Verse", &VICIOUS_VERSE));
 
 // FRA 86 — Heartstring Puller
 pub(in crate::card::sets) static HEARTSTRING_PULLER: CardRecord = CardRecord::new(
@@ -2993,40 +3068,33 @@ pub(in crate::card::sets) static NO_ADMITTANCE: CardRecord = CardRecord::new(
 );
 
 // FRA 90 — Pompous Battlemage // Improvised Act
-pub(in crate::card::sets) static POMPOUS_BATTLEMAGE: CardRecord = CardRecord::new_prepare(
+pub(in crate::card::sets) static POMPOUS_BATTLEMAGE: CardRecord = CardRecord::new(
     "Pompous Battlemage // Improvised Act",
     "aa0f77ac-741a-444a-8bf0-a42c644726bf",
     "Justin Gerard",
-    &[
-        (
-            "Pompous Battlemage",
-            CardRules::new_creature(mana_cost!("{R}"), &["Goblin", "Sorcerer"], 1, 1)
-                .with_abilities(&[abilities::prowess(), enters_prepared_with_reminder()]),
-        ),
-        (
-            "Improvised Act",
-            CardRules::new_sorcery(mana_cost!("{R}")).with_ability(AbilityDef::spell(
-                "You may discard a card. If you do, draw a card.",
-                EffectDef::PayOr(PayOrDef::optional(
-                    &[CostDef::discard(ObjectPredicateDef::Any)],
-                    &abilities::draw_cards(ValueDef::Constant(1)),
-                )),
+    CardRules::new_creature(mana_cost!("{R}"), &["Goblin", "Sorcerer"], 1, 1)
+        .with_abilities(&[abilities::prowess(), enters_prepared_with_reminder()]),
+)
+.with_composition(|| {
+    const ALTERNATE: CardRules =
+        CardRules::new_sorcery(mana_cost!("{R}")).with_ability(AbilityDef::spell(
+            "You may discard a card. If you do, draw a card.",
+            EffectDef::PayOr(PayOrDef::optional(
+                &[CostDef::discard(ObjectPredicateDef::Any)],
+                &abilities::draw_cards(ValueDef::Constant(1)),
             )),
-        ),
-    ],
-);
+        ));
+    prepare(&POMPOUS_BATTLEMAGE, "Improvised Act", &ALTERNATE)
+});
 
 // FRA 91 — Pyre Rhymer // Molten Tide
 // Audit: unsupported — Molten Tide needs an until-end-of-turn triggered mana ability that adds
 // an additional {R} whenever its controller taps a Mountain for mana.
-pub(in crate::card::sets) static PYRE_RHYMER: CardRecord = CardRecord::new_prepare(
+pub(in crate::card::sets) static PYRE_RHYMER: CardRecord = CardRecord::new(
     "Pyre Rhymer // Molten Tide",
     "2b0ebea0-86de-4da4-9fe8-dacc1e75c161",
     "Andrea Piparo",
-    &[
-        ("Pyre Rhymer", CardRules::unsupported()),
-        ("Molten Tide", CardRules::unsupported()),
-    ],
+    CardRules::unsupported(),
 );
 
 // FRA 92 — Skilled Battlecarver
@@ -3243,61 +3311,56 @@ pub(in crate::card::sets) static BUDDING_INSURGENT: CardRecord = CardRecord::new
 );
 
 // FRA 100 — Carnivorous Cultivator // Enroot
-pub(in crate::card::sets) static CARNIVOROUS_CULTIVATOR: CardRecord = CardRecord::new_prepare(
+pub(in crate::card::sets) static CARNIVOROUS_CULTIVATOR: CardRecord = CardRecord::new(
     "Carnivorous Cultivator // Enroot",
     "79dd5c54-5ea5-47b5-8f9b-50ed57a5ea45",
     "Martina Fačková",
-    &[
-        (
-            "Carnivorous Cultivator",
-            CardRules::new_creature(mana_cost!("{1}{G}"), &["Elf", "Warlock"], 2, 3)
-                .with_abilities(&[
-                    abilities::deathtouch(),
-                    enters_prepared(),
-                    AbilityDef::triggered_with_targets(
-                        "Whenever this creature deals combat damage to a player, return target \
-                         land card from your graveyard to your hand.",
-                        TriggerEventDef::combat_damage_to_player(ObjectPredicateDef::Source),
-                        &[AbilityTargetDef::exactly_one(
-                            AbilityTargetPredicate::Object {
-                                object: ObjectPredicateDef::HasType(CardType::Land),
-                                zones: &[ZoneKind::Graveyard],
-                                controller: None,
-                                owner: Some(PlayerRelation::You),
-                            },
-                        )],
-                        EffectDef::move_to_zone(
-                            EffectRecipientDef::Target(TargetIndex::PRIMARY),
-                            ZoneKind::Hand,
-                            ZonePlacement::Top,
-                        ),
-                    ),
-                ]),
-        ),
-        (
-            "Enroot",
-            CardRules::new_sorcery(mana_cost!("{G}")).with_ability(AbilityDef::spell(
-                "Search your library for a land card, put it into your graveyard, then shuffle.",
-                EffectDef::SearchZone {
-                    exile_face_down: false,
-                    player: EffectRecipientDef::Controller,
-                    source: ZoneKind::Library,
+    CardRules::new_creature(mana_cost!("{1}{G}"), &["Elf", "Warlock"], 2, 3).with_abilities(&[
+        abilities::deathtouch(),
+        enters_prepared(),
+        AbilityDef::triggered_with_targets(
+            "Whenever this creature deals combat damage to a player, return target \
+             land card from your graveyard to your hand.",
+            TriggerEventDef::combat_damage_to_player(ObjectPredicateDef::Source),
+            &[AbilityTargetDef::exactly_one(
+                AbilityTargetPredicate::Object {
                     object: ObjectPredicateDef::HasType(CardType::Land),
-                    minimum: 0,
-                    maximum: ValueDef::Constant(1),
-                    reveal: false,
-                    destination: ZoneKind::Graveyard,
-                    placement: ZonePlacement::Top,
-                    shuffle: true,
-                    enters_tapped: false,
-                    attachment: None,
-                    binding: None,
-                    then: None,
+                    zones: &[ZoneKind::Graveyard],
+                    controller: None,
+                    owner: Some(PlayerRelation::You),
                 },
-            )),
+            )],
+            EffectDef::move_to_zone(
+                EffectRecipientDef::Target(TargetIndex::PRIMARY),
+                ZoneKind::Hand,
+                ZonePlacement::Top,
+            ),
         ),
-    ],
-);
+    ]),
+)
+.with_composition(|| {
+    const ALTERNATE: CardRules =
+        CardRules::new_sorcery(mana_cost!("{G}")).with_ability(AbilityDef::spell(
+            "Search your library for a land card, put it into your graveyard, then shuffle.",
+            EffectDef::SearchZone {
+                exile_face_down: false,
+                player: EffectRecipientDef::Controller,
+                source: ZoneKind::Library,
+                object: ObjectPredicateDef::HasType(CardType::Land),
+                minimum: 0,
+                maximum: ValueDef::Constant(1),
+                reveal: false,
+                destination: ZoneKind::Graveyard,
+                placement: ZonePlacement::Top,
+                shuffle: true,
+                enters_tapped: false,
+                attachment: None,
+                binding: None,
+                then: None,
+            },
+        ));
+    prepare(&CARNIVOROUS_CULTIVATOR, "Enroot", &ALTERNATE)
+});
 
 // FRA 101 — Compel Brutality
 pub(in crate::card::sets) static COMPEL_BRUTALITY: CardRecord = CardRecord::new(
@@ -3479,14 +3542,11 @@ pub(in crate::card::sets) static GREENHOUSE_PROPAGATOR: CardRecord = CardRecord:
 // FRA 105 — Heartwood Crafter // Soul Tether
 // Audit: unsupported — Heartwood Crafter needs a mana restriction that forbids one use, casting a
 // spell from your hand; restrictions name the uses mana is permitted for.
-pub(in crate::card::sets) static HEARTWOOD_CRAFTER: CardRecord = CardRecord::new_prepare(
+pub(in crate::card::sets) static HEARTWOOD_CRAFTER: CardRecord = CardRecord::new(
     "Heartwood Crafter // Soul Tether",
     "910a1f41-17fd-4ab0-9597-7151e79dc760",
     "Anastasia Ovchinnikova",
-    &[
-        ("Heartwood Crafter", CardRules::unsupported()),
-        ("Soul Tether", CardRules::unsupported()),
-    ],
+    CardRules::unsupported(),
 );
 
 // FRA 106 — Hexhaven Invigorator
@@ -4273,19 +4333,14 @@ pub(in crate::card::sets) static DESPERATE_FUTURESCRIBE: CardRecord = CardRecord
 );
 
 // FRA 130 — Emergency Phytomedic // Seed Suture
-pub(in crate::card::sets) static EMERGENCY_PHYTOMEDIC: CardRecord = CardRecord::new_prepare(
+pub(in crate::card::sets) static EMERGENCY_PHYTOMEDIC: CardRecord = CardRecord::new(
     "Emergency Phytomedic // Seed Suture",
     "de94d388-919d-44ff-baef-8c90a417ac6d",
     "Dmitry Burmak",
-    &[
-        (
-            "Emergency Phytomedic",
-            CardRules::new_creature(mana_cost!("{G/W}"), &["Dryad", "Cleric"], 1, 1)
-                .with_abilities(&[enters_prepared_with_reminder()]),
-        ),
-        ("Seed Suture", SEED_SUTURE),
-    ],
-);
+    CardRules::new_creature(mana_cost!("{G/W}"), &["Dryad", "Cleric"], 1, 1)
+        .with_abilities(&[enters_prepared_with_reminder()]),
+)
+.with_composition(|| prepare(&EMERGENCY_PHYTOMEDIC, "Seed Suture", &SEED_SUTURE));
 
 // FRA 131 — Entrust the Spark
 pub(in crate::card::sets) static ENTRUST_THE_SPARK: CardRecord = CardRecord::new(
@@ -4383,19 +4438,14 @@ pub(in crate::card::sets) static FATEHOLD_CHARM: CardRecord = CardRecord::new(
 );
 
 // FRA 133 — Fatehold Chronologist // Peer Review
-pub(in crate::card::sets) static FATEHOLD_CHRONOLOGIST: CardRecord = CardRecord::new_prepare(
+pub(in crate::card::sets) static FATEHOLD_CHRONOLOGIST: CardRecord = CardRecord::new(
     "Fatehold Chronologist // Peer Review",
     "29e7ec16-0c16-48aa-8e09-ce6e0d5bd40b",
     "Alexander Mokhov",
-    &[
-        (
-            "Fatehold Chronologist",
-            CardRules::new_creature(mana_cost!("{1}{W/U}"), &["Bird", "Wizard"], 1, 2)
-                .with_abilities(&[abilities::flying(), enters_prepared_with_reminder()]),
-        ),
-        ("Peer Review", PEER_REVIEW),
-    ],
-);
+    CardRules::new_creature(mana_cost!("{1}{W/U}"), &["Bird", "Wizard"], 1, 2)
+        .with_abilities(&[abilities::flying(), enters_prepared_with_reminder()]),
+)
+.with_composition(|| prepare(&FATEHOLD_CHRONOLOGIST, "Peer Review", &PEER_REVIEW));
 
 // FRA 134 — Ferocity of the Hunt
 pub(in crate::card::sets) static FEROCITY_OF_THE_HUNT: CardRecord = CardRecord::new(
@@ -4563,19 +4613,14 @@ pub(in crate::card::sets) static KONSTRARI_CHARM: CardRecord = CardRecord::new(
 );
 
 // FRA 139 — Konstrari Improviser // Soul Tether
-pub(in crate::card::sets) static KONSTRARI_IMPROVISER: CardRecord = CardRecord::new_prepare(
+pub(in crate::card::sets) static KONSTRARI_IMPROVISER: CardRecord = CardRecord::new(
     "Konstrari Improviser // Soul Tether",
     "42e28bd2-486b-45d4-8840-6e33c19c2d57",
     "Matheus Graef",
-    &[
-        (
-            "Konstrari Improviser",
-            CardRules::new_creature(mana_cost!("{1}{R/G}"), &["Human", "Artificer"], 2, 2)
-                .with_abilities(&[enters_prepared_with_reminder()]),
-        ),
-        ("Soul Tether", SOUL_TETHER),
-    ],
-);
+    CardRules::new_creature(mana_cost!("{1}{R/G}"), &["Human", "Artificer"], 2, 2)
+        .with_abilities(&[enters_prepared_with_reminder()]),
+)
+.with_composition(|| prepare(&KONSTRARI_IMPROVISER, "Soul Tether", &SOUL_TETHER));
 
 // FRA 140 — Kwia Vigorbloom
 pub(in crate::card::sets) static KWIA_VIGORBLOOM: CardRecord = CardRecord::new(
@@ -4681,38 +4726,34 @@ pub(in crate::card::sets) static NULL_SUMMONER: CardRecord = CardRecord::new(
 );
 
 // FRA 143 — Paradox Shaper // Omit Variables
-pub(in crate::card::sets) static PARADOX_SHAPER: CardRecord = CardRecord::new_prepare(
+pub(in crate::card::sets) static PARADOX_SHAPER: CardRecord = CardRecord::new(
     "Paradox Shaper // Omit Variables",
     "e61b9d48-0ace-4453-afe0-a1024444bac0",
     "Mark Zug",
-    &[
-        (
-            "Paradox Shaper",
-            CardRules::new_creature(mana_cost!("{1}{U/B}"), &["Octopus", "Wizard"], 1, 3)
-                .with_abilities(&[
-                    reprepare_at_upkeep(),
-                    AbilityDef::activated_with_targets(
-                        "{2}: Put target card from your graveyard on the bottom of your library.",
-                        &[CostDef::Mana(mana_cost!("{2}"))],
-                        &[AbilityTargetDef::exactly_one(
-                            AbilityTargetPredicate::Object {
-                                object: ObjectPredicateDef::Any,
-                                zones: &[ZoneKind::Graveyard],
-                                controller: None,
-                                owner: Some(PlayerRelation::You),
-                            },
-                        )],
-                        EffectDef::move_to_zone(
-                            EffectRecipientDef::Target(TargetIndex::PRIMARY),
-                            ZoneKind::Library,
-                            ZonePlacement::Bottom,
-                        ),
-                    ),
-                ]),
-        ),
-        ("Omit Variables", OMIT_VARIABLES),
-    ],
-);
+    CardRules::new_creature(mana_cost!("{1}{U/B}"), &["Octopus", "Wizard"], 1, 3).with_abilities(
+        &[
+            reprepare_at_upkeep(),
+            AbilityDef::activated_with_targets(
+                "{2}: Put target card from your graveyard on the bottom of your library.",
+                &[CostDef::Mana(mana_cost!("{2}"))],
+                &[AbilityTargetDef::exactly_one(
+                    AbilityTargetPredicate::Object {
+                        object: ObjectPredicateDef::Any,
+                        zones: &[ZoneKind::Graveyard],
+                        controller: None,
+                        owner: Some(PlayerRelation::You),
+                    },
+                )],
+                EffectDef::move_to_zone(
+                    EffectRecipientDef::Target(TargetIndex::PRIMARY),
+                    ZoneKind::Library,
+                    ZonePlacement::Bottom,
+                ),
+            ),
+        ],
+    ),
+)
+.with_composition(|| prepare(&PARADOX_SHAPER, "Omit Variables", &OMIT_VARIABLES));
 
 // FRA 144 — Primal Witchstalker
 pub(in crate::card::sets) static PRIMAL_WITCHSTALKER: CardRecord = CardRecord::new(
@@ -4789,14 +4830,11 @@ pub(in crate::card::sets) static PROCTOR_OF_POTENTIAL: CardRecord = CardRecord::
 // FRA 146 — Prudent Fateseer // Peer Review
 // Audit: unsupported — Prudent Fateseer needs a trigger event for scrying or surveilling,
 // published wherever a scry or surveil of at least one card is performed.
-pub(in crate::card::sets) static PRUDENT_FATESEER: CardRecord = CardRecord::new_prepare(
+pub(in crate::card::sets) static PRUDENT_FATESEER: CardRecord = CardRecord::new(
     "Prudent Fateseer // Peer Review",
     "6c1c790b-9e0e-4964-9ea3-554843907f06",
     "Gustavo Pelissari",
-    &[
-        ("Prudent Fateseer", CardRules::unsupported()),
-        ("Peer Review", CardRules::unsupported()),
-    ],
+    CardRules::unsupported(),
 );
 
 // FRA 147 — Recursive Recruitment
@@ -4953,19 +4991,14 @@ pub(in crate::card::sets) static STINGERQUILL_CHARM: CardRecord = CardRecord::ne
 );
 
 // FRA 151 — Stingerquill Voxmancer // Vicious Verse
-pub(in crate::card::sets) static STINGERQUILL_VOXMANCER: CardRecord = CardRecord::new_prepare(
+pub(in crate::card::sets) static STINGERQUILL_VOXMANCER: CardRecord = CardRecord::new(
     "Stingerquill Voxmancer // Vicious Verse",
     "84b1c268-3b8a-41b6-92e3-a2ce0cc3d738",
     "Igor Grechanyi",
-    &[
-        (
-            "Stingerquill Voxmancer",
-            CardRules::new_creature(mana_cost!("{B/R}"), &["Goblin", "Sorcerer"], 1, 2)
-                .with_abilities(&[reprepare_at_upkeep_with_reminder()]),
-        ),
-        ("Vicious Verse", VICIOUS_VERSE),
-    ],
-);
+    CardRules::new_creature(mana_cost!("{B/R}"), &["Goblin", "Sorcerer"], 1, 2)
+        .with_abilities(&[reprepare_at_upkeep_with_reminder()]),
+)
+.with_composition(|| prepare(&STINGERQUILL_VOXMANCER, "Vicious Verse", &VICIOUS_VERSE));
 
 // FRA 152 — Stinging Vitriol
 pub(in crate::card::sets) static STINGING_VITRIOL: CardRecord = CardRecord::new(
@@ -5124,35 +5157,31 @@ pub(in crate::card::sets) static THEORIX_CHARM: CardRecord = CardRecord::new(
 );
 
 // FRA 156 — Theorix Metamage // Omit Variables
-pub(in crate::card::sets) static THEORIX_METAMAGE: CardRecord = CardRecord::new_prepare(
+pub(in crate::card::sets) static THEORIX_METAMAGE: CardRecord = CardRecord::new(
     "Theorix Metamage // Omit Variables",
     "fb6bad96-841d-4738-8e62-92f346f914fd",
     "Slawomir Maniak",
-    &[
-        (
-            "Theorix Metamage",
-            CardRules::new_creature(mana_cost!("{2}{U/B}"), &["Shade", "Wizard"], 2, 3)
-                .with_abilities(&crate::ability_list![
-                    [enters_prepared_with_reminder()],
-                    threshold(&[AbilityDef::static_ability(
-                        "Threshold — This creature gets +1/+0 and has flying as long as there \
-                         are seven or more cards in your graveyard.",
-                        EffectDef::StaticApply {
-                            recipient: EffectRecipientDef::Source,
-                            effect: AppliedEffectDef::Composite(&[
-                                AppliedEffectDef::modify_power_toughness(
-                                    ValueDef::Constant(1),
-                                    ValueDef::Constant(0),
-                                ),
-                                AppliedEffectDef::add_ability(&abilities::flying()),
-                            ]),
-                        },
-                    )]),
-                ]),
-        ),
-        ("Omit Variables", OMIT_VARIABLES),
-    ],
-);
+    CardRules::new_creature(mana_cost!("{2}{U/B}"), &["Shade", "Wizard"], 2, 3).with_abilities(
+        &crate::ability_list![
+            [enters_prepared_with_reminder()],
+            threshold(&[AbilityDef::static_ability(
+                "Threshold — This creature gets +1/+0 and has flying as long as there \
+                 are seven or more cards in your graveyard.",
+                EffectDef::StaticApply {
+                    recipient: EffectRecipientDef::Source,
+                    effect: AppliedEffectDef::Composite(&[
+                        AppliedEffectDef::modify_power_toughness(
+                            ValueDef::Constant(1),
+                            ValueDef::Constant(0),
+                        ),
+                        AppliedEffectDef::add_ability(&abilities::flying()),
+                    ]),
+                },
+            )]),
+        ],
+    ),
+)
+.with_composition(|| prepare(&THEORIX_METAMAGE, "Omit Variables", &OMIT_VARIABLES));
 
 // FRA 157 — Twinned Vision
 pub(in crate::card::sets) static TWINNED_VISION: CardRecord = CardRecord::new(
@@ -5300,35 +5329,29 @@ pub(in crate::card::sets) static VIGORBLOOM_CHARM: CardRecord = CardRecord::new(
 );
 
 // FRA 161 — Vigorbloom Vanguard // Seed Suture
-pub(in crate::card::sets) static VIGORBLOOM_VANGUARD: CardRecord = CardRecord::new_prepare(
+pub(in crate::card::sets) static VIGORBLOOM_VANGUARD: CardRecord = CardRecord::new(
     "Vigorbloom Vanguard // Seed Suture",
     "acefc515-bf97-4dc0-b0f7-ae8ae5a61671",
     "Denman Rooke",
-    &[
-        (
-            "Vigorbloom Vanguard",
-            CardRules::new_creature(mana_cost!("{1}{G/W}"), &["Troll", "Druid"], 2, 2)
-                .with_abilities(&[
-                    enters_prepared_with_reminder(),
-                    AbilityDef::static_ability(
-                        "Each creature you control with a +1/+1 counter on it has vigilance.",
-                        EffectDef::StaticApply {
-                            recipient: EffectRecipientDef::matching_objects(
-                                ObjectPredicateDef::All(&[
-                                    ObjectPredicateDef::HasType(CardType::Creature),
-                                    ObjectPredicateDef::HasCounter(CounterKind::PlusOnePlusOne),
-                                ]),
-                                &[ZoneKind::Battlefield],
-                                PlayerRelation::You,
-                            ),
-                            effect: AppliedEffectDef::add_ability(&abilities::vigilance()),
-                        },
-                    ),
-                ]),
+    CardRules::new_creature(mana_cost!("{1}{G/W}"), &["Troll", "Druid"], 2, 2).with_abilities(&[
+        enters_prepared_with_reminder(),
+        AbilityDef::static_ability(
+            "Each creature you control with a +1/+1 counter on it has vigilance.",
+            EffectDef::StaticApply {
+                recipient: EffectRecipientDef::matching_objects(
+                    ObjectPredicateDef::All(&[
+                        ObjectPredicateDef::HasType(CardType::Creature),
+                        ObjectPredicateDef::HasCounter(CounterKind::PlusOnePlusOne),
+                    ]),
+                    &[ZoneKind::Battlefield],
+                    PlayerRelation::You,
+                ),
+                effect: AppliedEffectDef::add_ability(&abilities::vigilance()),
+            },
         ),
-        ("Seed Suture", SEED_SUTURE),
-    ],
-);
+    ]),
+)
+.with_composition(|| prepare(&VIGORBLOOM_VANGUARD, "Seed Suture", &SEED_SUTURE));
 
 // FRA 162 — Vindictive Triumph
 pub(in crate::card::sets) static VINDICTIVE_TRIUMPH: CardRecord = CardRecord::new(
@@ -5413,30 +5436,22 @@ pub(in crate::card::sets) static WARRIOR_S_BLADES: CardRecord = CardRecord::new(
 // FRA 164 — Whiplash Wordsmith // Vicious Verse
 // Audit: unsupported — Whiplash Wordsmith needs a per-turn history flag recording that an opponent
 // has been dealt noncombat damage this turn.
-pub(in crate::card::sets) static WHIPLASH_WORDSMITH: CardRecord = CardRecord::new_prepare(
+pub(in crate::card::sets) static WHIPLASH_WORDSMITH: CardRecord = CardRecord::new(
     "Whiplash Wordsmith // Vicious Verse",
     "8096bc9a-a610-448f-bef2-7230e17e9777",
     "Anastasia Ovchinnikova",
-    &[
-        ("Whiplash Wordsmith", CardRules::unsupported()),
-        ("Vicious Verse", CardRules::unsupported()),
-    ],
+    CardRules::unsupported(),
 );
 
 // FRA 165 — Woodwork Prodigy // Soul Tether
-pub(in crate::card::sets) static WOODWORK_PRODIGY: CardRecord = CardRecord::new_prepare(
+pub(in crate::card::sets) static WOODWORK_PRODIGY: CardRecord = CardRecord::new(
     "Woodwork Prodigy // Soul Tether",
     "7d17f7e3-7b63-4674-9024-4fd1827f40ec",
     "Lius Lasahido",
-    &[
-        (
-            "Woodwork Prodigy",
-            CardRules::new_creature(mana_cost!("{2}{R/G}"), &["Cat", "Druid"], 3, 3)
-                .with_abilities(&[reprepare_at_upkeep_with_reminder()]),
-        ),
-        ("Soul Tether", SOUL_TETHER),
-    ],
-);
+    CardRules::new_creature(mana_cost!("{2}{R/G}"), &["Cat", "Druid"], 3, 3)
+        .with_abilities(&[reprepare_at_upkeep_with_reminder()]),
+)
+.with_composition(|| prepare(&WOODWORK_PRODIGY, "Soul Tether", &SOUL_TETHER));
 
 // FRA 166 — Afterthought Sentry
 pub(in crate::card::sets) static AFTERTHOUGHT_SENTRY: CardRecord = CardRecord::new(

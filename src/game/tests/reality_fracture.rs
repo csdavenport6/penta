@@ -14,9 +14,9 @@ use super::empower_jace::{
     stock_library,
 };
 use super::mana_pool_doubling::commander_game;
-use super::prepare_cards::{exiled_copies, is_prepared};
 use super::woe_hob_completion::{hand, setup};
 use super::*;
+use crate::card::PermanentDesignationDef;
 
 mod choices;
 mod last_known_information;
@@ -216,6 +216,32 @@ fn castable_targets(game: &Game, card: GameObjectId) -> Vec<Vec<Target>> {
         .map(|action| match action {
             Action::CastSpell { choices, .. } => choices.iter_targets().copied().collect(),
             _ => unreachable!("only casts are collected"),
+        })
+        .collect()
+}
+
+/// Whether `permanent` is prepared.
+fn is_prepared(game: &Game, permanent: GameObjectId) -> bool {
+    game.battlefield
+        .iter()
+        .find(|candidate| candidate.card.id == permanent)
+        .expect("the permanent is on the battlefield")
+        .designations
+        .contains(&PermanentDesignationDef::Prepared)
+}
+
+/// Everything `player` has in exile, by name.
+fn exiled_copies(game: &Game, player: PlayerId) -> Vec<(GameObjectId, String)> {
+    game.players[player.index()]
+        .exile
+        .iter()
+        .map(|card| {
+            (
+                card.id,
+                game.object_card_name(card.id)
+                    .expect("an exiled copy has a name")
+                    .into_owned(),
+            )
         })
         .collect()
 }
