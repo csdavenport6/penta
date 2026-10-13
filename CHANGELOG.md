@@ -20,6 +20,71 @@ the bot-wire epoch.
 
 ## Unreleased
 
+- Declare Reality Fracture's 21 preparation cards and their eight alternate
+  printings, and implement 15 of them on the prepare helpers. Seed Suture,
+  Peer Review, Omit Variables, Vicious Verse, and Soul Tether are each printed
+  on three cards and have one rules constant apiece, which their supported
+  printings share. Six stay unsupported, neither part given rules, each
+  with an audit naming the gap: Diviner of Victory and Prudent Fateseer need a
+  scry-or-surveil trigger event, Bloodline Recollector the creatures-died
+  count in an intervening-if, Whiplash Wordsmith a noncombat-damage history
+  flag, Pyre Rhymer a temporary mana trigger for Molten Tide, and Heartwood
+  Crafter a mana restriction that forbids one use. Secrets of Strixhaven gains
+  `enters_prepared_with_reminder` and `reprepare_at_upkeep_with_reminder` for
+  the printings that carry the mechanic's reminder text. Protocol, checkpoint,
+  and replay versions are unchanged.
+
+- Implement 46 Reality Fracture legends (collector numbers 195 to 280) from
+  existing effects. Two stay unsupported. Jiang Yanggu, Alone needs an attack
+  matcher that counts only the creatures declared against the same player; the
+  declaration-size range also counts attackers aimed at that player's
+  planeswalkers. Titanbones, Towering Heart needs a discard event the
+  discarded card itself hears; the per-card event never reaches that card, and
+  watching for its arrival in the graveyard would miss a discard that Rest in
+  Peace exiles instead. Protocol, checkpoint, and replay versions are
+  unchanged.
+
+- Implement 44 Reality Fracture multicolor cards, artifacts, and lands
+  (collector numbers 121 to 194) from existing effects. Protocol, checkpoint,
+  and replay versions are unchanged.
+
+- Implement 35 Reality Fracture cards in red and green (collector numbers 72
+  to 120) from existing effects. `card::tokens::heartwood()` declares the
+  rules-defined Heartwood token (CR 111.10x). Protocol, checkpoint, and replay
+  versions are unchanged.
+
+- Implement 38 Reality Fracture cards in white, blue, and black (collector
+  numbers 6 to 69) from existing effects. Return to the Light Realms stays
+  unsupported: an Aura card put onto the battlefield without being cast needs
+  the CR 303.4f host choice, and a plain zone move brings it in unattached. A
+  target slot that excludes its ability's source now also excludes a source
+  that is a card in a graveyard or other nonbattlefield zone, which
+  Theoretical Necromancer's "another target creature card" relies on.
+  Protocol, checkpoint, and replay versions are unchanged.
+
+- Implement Empower Jace (CR 701.71) and 26 Reality Fracture cards built on
+  it: 20 that empower Jace and the six that grant a loyalty ability to
+  planeswalkers you control. `reality_fracture::empower_jace(amount)` composes
+  the keyword action from existing effects around one shared Jace planeswalker
+  token; granted loyalty abilities share their planeswalker's one activation
+  each turn. Overwrite the Multiverse stays unsupported: a zone-move result
+  also binds a move that a replacement effect redirected to another zone, so
+  it cannot count only the creatures exiled this way. Activation and
+  event-time conditions can now read a total over an object set
+  (`ValueDef::AggregateObjectValues`), which previously evaluated as 0 outside
+  a resolving effect. Protocol, checkpoint, and replay versions are unchanged.
+
+- Catalog Reality Fracture (`FRA`, slug `reality-fracture`) and make it legal
+  in Legacy and Vintage. cEDH and Duel Commander see it through the shared
+  catalog; no Standard profile includes it. Its 247 non-preparation identities
+  are declared alongside 17 reprint and 169 alternate printings; those the
+  entries above do not implement stay whole-card unsupported, each with an
+  audit naming the missing capability. Its 21 preparation cards are declared
+  separately with the prepare constructor. Tarmogoyf, Tetsuko Umezawa,
+  Fugitive, and Yargle, Glutton of Urborg gain implemented records in Future
+  Sight and Dominaria, and `Heartwood` joins the artifact subtype vocabulary.
+  Protocol, checkpoint, and replay versions are unchanged.
+
 - Declare a preparation card (CR 722) as one record naming the permanent and
   its prepare spell: `CardRecord::new_prepare`, backed by the public
   `CardComposition::alternate_spell`. Either part may still be unsupported.

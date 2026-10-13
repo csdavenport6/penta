@@ -186,7 +186,7 @@ fn mana_pool_doubling_pays_channel_shortfall_before_counting() {
     assert_eq!(game.players[0].mana_pool.colorless, 0);
 }
 
-fn commander_game(format: Format) -> Game {
+pub(super) fn commander_game(format: Format) -> Game {
     let deck = Deck {
         commanders: vec![cards::SQUEE_GOBLIN_NABOB, cards::THALIA_GUARDIAN_OF_THRABEN],
         main: vec![cards::MOUNTAIN; 99],

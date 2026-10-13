@@ -1,4 +1,4 @@
-//! Dominaria cards cataloged for the Vintage Cube pool.
+//! Dominaria cards cataloged for the Vintage Cube pool and for later reprints.
 
 use super::CardRecord;
 use super::PrintingRecord;
@@ -9,6 +9,9 @@ use crate::card::AddManaEffectDef;
 use crate::card::AppliedEffectDef;
 use crate::card::AppliedRuleDef;
 use crate::card::BattlefieldEntryModificationDef;
+use crate::card::BlockRestrictionDef;
+use crate::card::BlockRestrictionMatchDef;
+use crate::card::BlockRestrictionSubjectDef;
 use crate::card::CardRules;
 use crate::card::CardSupertype;
 use crate::card::CardType;
@@ -339,6 +342,42 @@ pub(in crate::card::sets) static TEMPEST_DJINN: CardRecord = CardRecord::new(
     ]),
 );
 
+// DOM 69 — Tetsuko Umezawa, Fugitive
+pub(in crate::card::sets) static TETSUKO_UMEZAWA_FUGITIVE: CardRecord = CardRecord::new(
+    "Tetsuko Umezawa, Fugitive",
+    "16185c50-f7b8-4cea-a129-dfad8e9df781",
+    "Randy Vargas",
+    CardRules::new_creature(mana_cost!("{1}{U}"), &["Human", "Rogue"], 1, 3)
+        .with_supertype(CardSupertype::Legendary)
+        .with_abilities(&[AbilityDef::static_ability(
+            "Creatures you control with power or toughness 1 or less can't be blocked.",
+            // Authored on every would-be blocker rather than on the evasive
+            // creatures. A block restriction reads its counterpart's current
+            // stats as blockers are declared; static recipient membership is
+            // settled before static power and toughness effects apply, so it
+            // would keep a creature an anthem had grown past the limit.
+            EffectDef::StaticApply {
+                recipient: EffectRecipientDef::matching_objects(
+                    ObjectPredicateDef::HasType(CardType::Creature),
+                    &[ZoneKind::Battlefield],
+                    PlayerRelation::Any,
+                ),
+                effect: AppliedEffectDef::Rule(AppliedRuleDef::BlockRestriction(
+                    BlockRestrictionDef::prohibit(
+                        BlockRestrictionSubjectDef::Blocker,
+                        BlockRestrictionMatchDef::Matching(ObjectPredicateDef::All(&[
+                            ObjectPredicateDef::ControlledBy(PlayerRelation::You),
+                            ObjectPredicateDef::AnyOf(&[
+                                ObjectPredicateDef::PowerLessThan(ValueDef::Constant(2)),
+                                ObjectPredicateDef::ToughnessLessThan(ValueDef::Constant(2)),
+                            ]),
+                        ])),
+                    ),
+                )),
+            },
+        )]),
+);
+
 // DOM 81 — Cast Down
 pub(in crate::card::sets) static CAST_DOWN: CardRecord = CardRecord::new(
     "Cast Down",
@@ -496,6 +535,15 @@ pub(in crate::card::sets) static KNIGHT_OF_MALICE: CardRecord = CardRecord::new(
     "b45266f0-eb4f-4a06-bc64-8c2d774b4cc5",
     "Sidharth Chaturvedi",
     CardRules::unsupported(),
+);
+
+// DOM 113 — Yargle, Glutton of Urborg
+pub(in crate::card::sets) static YARGLE_GLUTTON_OF_URBORG: CardRecord = CardRecord::new(
+    "Yargle, Glutton of Urborg",
+    "645cfc1b-76f2-4823-9fb0-03cb009f8b32",
+    "Jehan Choo",
+    CardRules::new_creature(mana_cost!("{4}{B}"), &["Frog", "Spirit"], 9, 3)
+        .with_supertype(CardSupertype::Legendary),
 );
 
 // DOM 127 — Ghitu Lavarunner
@@ -999,10 +1047,12 @@ pub(in crate::card::sets) static CARDS: &[&CardRecord] = &[
     &LYRA_DAWNBRINGER,
     &TESHAR_ANCESTOR_S_APOSTLE,
     &TEMPEST_DJINN,
+    &TETSUKO_UMEZAWA_FUGITIVE,
     &CAST_DOWN,
     &DARK_BARGAIN,
     &FINAL_PARTING,
     &KNIGHT_OF_MALICE,
+    &YARGLE_GLUTTON_OF_URBORG,
     &GHITU_LAVARUNNER,
     &SQUEE_THE_IMMORTAL,
     &WARLORD_S_FURY,

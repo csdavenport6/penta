@@ -791,17 +791,19 @@ cast option per part through `CardComposition::alternate_spell`; do not write a
 combined `permanent // spell` name, which is also what a deck list uses. Unlike
 a double-faced card, the permanent's name alone is not a lookup alias.
 
-Either part may be `CardRules::unsupported()`. Declare a new preparation card
-with both names as soon as it is inventoried, even when neither part has rules:
-the prepare spell's name is only nameable (CR 722.5) once the second part
-exists. The card
-stays unsupported until both parts are complete, and its audit comment names
-the gap in whichever part is missing.
+The constructor accepts `CardRules::unsupported()` for a part. Declare a new
+preparation card with both names as soon as it is inventoried, before it has
+rules: the prepare spell's name is only nameable (CR 722.5) once the second
+part exists. Until both parts are complete, leave both unsupported: an
+unsupported card exposes no executable clause, and the registry-integrity test
+rejects one with a castable part. Its audit comment names the gap in whichever
+part is missing.
 
 Give the prepare spell ordinary spell rules. When it is an existing card,
 reuse that record's rules as above. When one prepare spell is printed on
 several cards, share one rules constant in the set preamble so the copies
-agree.
+agree. A printing that is still unsupported takes the constant when it
+becomes supported.
 
 The Secrets of Strixhaven module, where the mechanic debuted, owns the
 recurring clauses. Later sets import them from there:
@@ -809,17 +811,21 @@ recurring clauses. Later sets import them from there:
 | Printed clause | Helper |
 | --- | --- |
 | "This creature enters prepared." | `enters_prepared()` |
+| The same, followed by the reminder text | `enters_prepared_with_reminder()` |
 | "... becomes prepared." | `become_prepared(recipient)` |
 | "... becomes unprepared." | `become_unprepared(recipient)` |
 | "At the beginning of your upkeep, if this creature isn't prepared, it becomes prepared." | `reprepare_at_upkeep()` |
+| The same, followed by the reminder text | `reprepare_at_upkeep_with_reminder()` |
 
-`enters_prepared()` and `reprepare_at_upkeep()` are whole ability clauses. A
-card that prints its own name instead of "this creature" keeps the helper and
-adds `.override_text(...)`. `become_prepared` and `become_unprepared` are
-effects: compose them into whatever trigger, activation, or payment the card
-prints, with `EffectRecipientDef::Source` for "this creature" or a target for
-"target creature becomes prepared". The helpers' default text carries no
-reminder text.
+`enters_prepared()` and `reprepare_at_upkeep()` are whole ability clauses. Most
+printings follow the clause with the mechanic's reminder text, "(While it's
+prepared, you may cast a copy of its spell. Doing so unprepares it.)"; the
+`_with_reminder` forms carry it. A card that prints its own name instead of
+"this creature" keeps the helper and adds `.override_text(...)`.
+`become_prepared` and `become_unprepared` are effects: compose them into
+whatever trigger, activation, or payment the card prints, with
+`EffectRecipientDef::Source` for "this creature" or a target for "target
+creature becomes prepared".
 
 The designation and its exiled copy are the engine's job, not the card's:
 
@@ -840,6 +846,60 @@ The designation and its exiled copy are the engine's job, not the card's:
 hold these rulings as regression tests; the former runs every case in both
 engine modes. A new preparation card needs a card-level test only for
 what its own clauses add.
+
+## Empower Jace
+
+Empower Jace N (CR 701.71) is a keyword action composed from ordinary effects.
+Use `sets::reality_fracture::empower_jace(amount)` wherever a clause says
+"empower Jace N", and keep the printed text and reminder text on that clause:
+
+```rust
+abilities::enters_trigger(
+    "When this creature enters, empower Jace 4. (Put four loyalty counters on a Jace \
+     token you control. If you don't control one, first create a blue Jace \
+     planeswalker token with \"[−1]: Surveil 1\" and \"[−3]: Draw a card.\")",
+    empower_jace(ValueDef::Constant(4)),
+)
+```
+
+The helper works out the amount, creates the token if you control no Jace
+planeswalker token, asks you to choose a Jace planeswalker token you control,
+and puts that many loyalty counters on it.
+
+- The amount is bound before the token is created, so "where X is the number
+  of ..." counts the board the instruction started from. Pass any `ValueDef`
+  the surrounding program can evaluate. A count bound by `WithZoneMoveResult`
+  is not "the number exiled this way": it includes a move that a replacement
+  effect redirected to another zone, which is why Overwrite the Multiverse
+  stays unsupported.
+- The choice is a characteristic query, not a list of tokens Empower made. Any
+  token that is a Jace planeswalker qualifies, including a token copy of a
+  nontoken Jace. A nontoken Jace never qualifies and does not stop the token
+  from being created.
+- The token has no printed loyalty and enters with none. Zero is safe only
+  until the counters land later in the same resolution, because state-based
+  actions are not checked in between. Empower Jace 0 creates a token that the
+  next state-based check puts into the graveyard (CR 704.5i).
+- Every Empower card creates the one `JACE_TOKEN` constant, whose abilities
+  are a single `static` array. Token identity compares the ability list by
+  address, so never declare a second Jace token inline: it would be a
+  different token.
+
+"Planeswalkers you control have '[cost]: ...'" uses the set's
+`planeswalkers_you_control_have(text, &ability)`, a `StaticApply` of
+`AppliedEffectDef::add_ability`. Give the granted ability a `CostDef::Loyalty`
+cost and it is a loyalty ability like the printed ones: it keeps loyalty
+timing, needs the loyalty it removes, and shares its planeswalker's one
+activation each turn (CR 606.3). One that adds mana is still
+`AbilityDef::activated`, never `activated_mana`; a loyalty ability uses the
+stack.
+
+`src/game/tests/empower_jace.rs` holds the Empower rulings and the granted
+loyalty limit as regression tests in both engine modes. A new Empower card
+needs a card-level test only for a value or condition it reads somewhere that
+file does not already cover: catalog validation can accept a value that an
+activation condition or event-time condition, which have no resolving object,
+evaluates as 0.
 
 ## Class level bars
 

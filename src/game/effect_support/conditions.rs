@@ -282,6 +282,20 @@ impl Game {
                 i32::try_from(self.source_object_set_targets(*objects, source).len())
                     .unwrap_or(i32::MAX)
             }
+            // A total over the same sets, for a bound on what the members
+            // hold rather than on how many there are: "twenty-five or more
+            // loyalty counters among Jaces you control". A query is read
+            // the way a count of it is, for the player and event this
+            // condition is being asked about.
+            crate::card::ValueDef::AggregateObjectValues(aggregate) => {
+                let objects = match aggregate.objects {
+                    crate::card::ObjectSetDef::Query(query) => {
+                        self.objects_matching_query(query, controller, source, context)
+                    }
+                    objects => self.source_object_set_targets(objects, source),
+                };
+                self.aggregate_object_values(objects, aggregate.select, aggregate.operation)
+            }
             crate::card::ValueDef::CardTypesAmongObjects(objects) => {
                 self.card_types_among_targets(&self.source_object_set_targets(*objects, source))
             }

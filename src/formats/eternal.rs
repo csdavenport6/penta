@@ -199,6 +199,7 @@ const ALLOWED_SETS: &[CardSet] = &[
     sets::jumpstart_2022::SET,
     sets::avatar_the_last_airbender_eternal::SET,
     sets::the_hobbit::SET,
+    sets::reality_fracture::SET,
 ];
 
 const SHARED_BANS: &[&str] = &[

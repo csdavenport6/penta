@@ -53,6 +53,10 @@ fn subtype_families_share_only_their_rules_defined_card_types() {
     assert!(!Subtype::Ugin.in_family(SubtypeFamily::Creature));
     assert!(Subtype::Spacecraft.in_family(SubtypeFamily::Artifact));
     assert!(Subtype::Spacecraft.in_family(SubtypeFamily::Planar));
+    // Reality Fracture's Heartwood is an artifact type, not a creature type.
+    let heartwood = Subtype::from_name("Heartwood").expect("Heartwood is a subtype");
+    assert!(heartwood.in_family(SubtypeFamily::Artifact));
+    assert!(!heartwood.in_family(SubtypeFamily::Creature));
 }
 
 #[test]
