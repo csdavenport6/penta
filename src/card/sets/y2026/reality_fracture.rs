@@ -2174,29 +2174,15 @@ pub(in crate::card::sets) static MULTIPLY_BY_ZERO: CardRecord = CardRecord::new(
 );
 
 // FRA 59 — Overwrite the Multiverse
+// Audit: unsupported — Needs a count of the creatures the exile actually put into exile. A
+// zone-move result binds every completed move, including one a replacement effect redirected to
+// another zone, so "the number of creatures exiled this way" would count a creature that was
+// never exiled.
 pub(in crate::card::sets) static OVERWRITE_THE_MULTIVERSE: CardRecord = CardRecord::new(
     "Overwrite the Multiverse",
     "c4554f5b-791b-48f6-bf54-ad28699e1beb",
     "Ryan Pancoast",
-    CardRules::new_sorcery(mana_cost!("{4}{B}{B}")).with_ability(AbilityDef::spell(
-        "Exile all creatures. Empower Jace X, where X is the number of creatures exiled this \
-         way. (Put that many loyalty counters on a Jace token you control. If you don't control \
-         one, first create a blue Jace planeswalker token with \"[−1]: Surveil 1\" and \
-         \"[−3]: Draw a card.\")",
-        EffectDef::WithZoneMoveResult {
-            effect: &EffectDef::move_to_zone(
-                EffectRecipientDef::matching_objects(
-                    ObjectPredicateDef::HasType(CardType::Creature),
-                    &[ZoneKind::Battlefield],
-                    PlayerRelation::Any,
-                ),
-                ZoneKind::Exile,
-                ZonePlacement::Top,
-            ),
-            binding: Binding!("overwritten"),
-            then: &empower_jace(ValueDef::BoundObjectCount(Binding!("overwritten"))),
-        },
-    )),
+    CardRules::unsupported(),
 );
 
 // FRA 60 — Rampart Hunter

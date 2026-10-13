@@ -868,9 +868,10 @@ and puts that many loyalty counters on it.
 
 - The amount is bound before the token is created, so "where X is the number
   of ..." counts the board the instruction started from. Pass any `ValueDef`
-  the surrounding program can evaluate, including one read from an earlier
-  step: Overwrite the Multiverse wraps its exile in `WithZoneMoveResult` and
-  passes `ValueDef::BoundObjectCount` for "creatures exiled this way".
+  the surrounding program can evaluate. A count bound by `WithZoneMoveResult`
+  is not "the number exiled this way": it includes a move that a replacement
+  effect redirected to another zone, which is why Overwrite the Multiverse
+  stays unsupported.
 - The choice is a characteristic query, not a list of tokens Empower made. Any
   token that is a Jace planeswalker qualifies, including a token copy of a
   nontoken Jace. A nontoken Jace never qualifies and does not stop the token

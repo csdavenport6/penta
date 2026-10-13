@@ -10,9 +10,6 @@ use crate::card::Subtype;
 
 const JACE: Subtype = Subtype::from_name("Jace").expect("Jace is a planeswalker type");
 
-static SOLDIER: TokenCharacteristics =
-    TokenCharacteristics::creature(&["Soldier"], &[ManaColor::White], 1, 1);
-
 /// Player one's Jace planeswalker tokens and the loyalty on each, in
 /// battlefield order.
 fn jace_tokens(game: &Game) -> Vec<(GameObjectId, u16)> {
@@ -432,39 +429,6 @@ fn jace_reality_sculptor_exiles_all_but_the_bottom_card_of_a_library() {
             );
             assert_eq!(loyalty(&game, sculptor), 25, "a zero costs nothing");
             assert!(game.result().is_none(), "nobody has had to draw yet");
-        }
-    }
-}
-
-/// Overwrite the Multiverse counts what it exiled, tokens and the opponent's
-/// creatures included, before the Jace token arrives.
-#[test]
-fn overwrite_the_multiverse_empowers_for_each_creature_it_exiled() {
-    for prepared_engine in [false, true] {
-        for creatures in [0, 2] {
-            let mut game = setup(prepared_engine);
-            settled(&mut game, cards::FOREST);
-            for _ in 0..creatures {
-                settled(&mut game, cards::GRIZZLY_BEARS);
-                game.put_onto_battlefield(PlayerId::Two, cards::GRIZZLY_BEARS)
-                    .unwrap();
-                game.create_token_from(PlayerId::Two, SOLDIER, None);
-            }
-
-            cast(&mut game, cards::OVERWRITE_THE_MULTIVERSE, &[]);
-            drain_pending(&mut game);
-
-            assert_eq!(game.battlefield.len(), 1 + usize::from(creatures > 0));
-            let loyalties = jace_tokens(&game)
-                .into_iter()
-                .map(|(_, loyalty)| loyalty)
-                .collect::<Vec<_>>();
-            if creatures == 0 {
-                assert!(loyalties.is_empty(), "empower Jace 0 keeps no token");
-                assert_eq!(departed(&game).len(), 1, "though it made one");
-            } else {
-                assert_eq!(loyalties, [6], "two each of yours, theirs, and tokens");
-            }
         }
     }
 }
