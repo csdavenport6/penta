@@ -13,6 +13,10 @@ legality, and executable rules support are separate questions. Each imported
 card resolves to a catalog identity, and incomplete rules remain whole-card
 `CardRules::unsupported()` declarations with an inline capability-gap audit.
 
+Reality Fracture (FRA) is in both pools and in neither Standard profile. cEDH
+and Duel Commander reach it through the shared catalog, as they do every
+cataloged set.
+
 Ban and restriction policy was checked on September 12, 2026 against the
 [Wizards list](https://magic.wizards.com/en/banned-restricted-list). Category
 bans for ante, Conspiracy, offensive cards, stickers, and Attractions are

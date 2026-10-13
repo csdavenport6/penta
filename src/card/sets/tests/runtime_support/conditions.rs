@@ -67,6 +67,12 @@ fn shared_condition_value(value: ValueDef, static_context: bool) -> bool {
         ValueDef::CardTypesAmongObjects(objects) | ValueDef::CountObjects(objects) => {
             shared_source_object_set(*objects)
         }
+        // A total over the same sets, read live where an activation is
+        // offered or a trigger is placed. Not offered to a static clause: a
+        // total of powers would read the layer being computed.
+        ValueDef::AggregateObjectValues(aggregate) => {
+            !static_context && shared_source_object_set(aggregate.objects)
+        }
         ValueDef::CountSpellsCastThisTurn(query) => shared_object_predicate(query.spell),
         ValueDef::CountMatchingObjects(query) | ValueDef::DistinctNamesAmong(query) => {
             (!static_context || query.position.is_none_or(|position| matches!(position, ZonePositionDef::FromTop(_)))) && shared_query(*query)

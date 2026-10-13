@@ -311,6 +311,7 @@ const SET_MODULES: &[SetDefinition] = &[
     y2021::kaldheim_commander::DEFINITION,
     y2022::jumpstart_2022::DEFINITION,
     y2025::avatar_the_last_airbender_eternal::DEFINITION,
+    y2026::reality_fracture::DEFINITION,
 ];
 
 pub(super) fn definitions() -> Vec<CardDefinition> {
