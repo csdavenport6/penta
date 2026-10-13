@@ -75,13 +75,13 @@ the bot-wire epoch.
 - Catalog Reality Fracture (`FRA`, slug `reality-fracture`) and make it legal
   in Legacy and Vintage. cEDH and Duel Commander see it through the shared
   catalog; no Standard profile includes it. Its 247 non-preparation identities
-  are declared with whole-card unsupported rules, each with an audit naming
-  the missing capability or that its rules are not implemented yet, alongside
-  17 reprint and 169 alternate printings. Its 21 preparation cards are
-  declared separately with the prepare constructor. Tarmogoyf, Tetsuko
-  Umezawa, Fugitive, and Yargle, Glutton of Urborg gain implemented records in
-  Future Sight and Dominaria, and `Heartwood` joins the artifact subtype
-  vocabulary. Protocol, checkpoint, and replay versions are unchanged.
+  are declared alongside 17 reprint and 169 alternate printings; those the
+  entries above do not implement stay whole-card unsupported, each with an
+  audit naming the missing capability. Its 21 preparation cards are declared
+  separately with the prepare constructor. Tarmogoyf, Tetsuko Umezawa,
+  Fugitive, and Yargle, Glutton of Urborg gain implemented records in Future
+  Sight and Dominaria, and `Heartwood` joins the artifact subtype vocabulary.
+  Protocol, checkpoint, and replay versions are unchanged.
 
 - Declare a preparation card (CR 722) as one record naming the permanent and
   its prepare spell: `CardRecord::new_prepare`, backed by the public
