@@ -545,7 +545,6 @@ mod lost_caverns_of_ixalan;
 mod marvel_super_heroes;
 mod playtest_regressions;
 mod plot_exile;
-mod prepare_cards;
 mod ral_crackling_wit;
 mod ramos_dragon_engine;
 mod secrets_of_strixhaven;

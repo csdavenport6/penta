@@ -4,25 +4,29 @@
 //! Catalog validation accepts shapes that a particular evaluator answers with
 //! zero or with nothing, so each case here runs the printed card in both
 //! engine modes and checks the outcome the Oracle text and rulings require.
+//!
+//! The cases are grouped by the rule area they exercise, not by card: one
+//! card's cases can sit in several submodules, and a card whose clauses the
+//! shared mechanic tests already cover has none. The fixtures here are the
+//! ones more than one submodule uses.
 use super::empower_jace::{
     activate, activations, cast, casts, permanent, permanent_mut, reconstructed, settled,
     stock_library,
 };
 use super::mana_pool_doubling::commander_game;
-use super::prepare_cards::{exiled_copies, is_prepared, take_an_upkeep};
 use super::woe_hob_completion::{hand, setup};
 use super::*;
+use crate::card::PermanentDesignationDef;
 
-mod artifacts;
-mod black;
-mod blue;
-mod green;
-mod lands;
-mod legends;
-mod multicolor;
-mod prepare;
-mod red;
-mod white;
+mod choices;
+mod last_known_information;
+mod payments;
+mod permanent_rules;
+mod resolution;
+mod targeting;
+mod trigger_conditions;
+mod triggers;
+mod zone_permissions;
 
 /// Whether the permanent `id` is still on the battlefield.
 fn on_battlefield(game: &Game, id: GameObjectId) -> bool {
@@ -123,13 +127,6 @@ fn in_hand_of(game: &mut Game, player: PlayerId, definition: CardDefinitionId) -
     id
 }
 
-/// Whether `player` could cast the card `id` with the mana they have.
-fn can_cast(game: &Game, player: PlayerId, id: GameObjectId) -> bool {
-    game.legal_actions(player)
-        .iter()
-        .any(|action| matches!(action, Action::CastSpell { card, .. } if *card == id))
-}
-
 /// Player one's turn moves from the second main phase to the end step, with
 /// the mana left over from casting gone rather than burning anybody.
 fn end_step_begins(game: &mut Game) {
@@ -167,29 +164,6 @@ fn run_to_decision(game: &mut Game) -> Option<DecisionObservation> {
     panic!("the stack never settled");
 }
 
-/// Player one answers a surveil 1 by putting the card into their graveyard,
-/// or by leaving it on top of their library.
-fn surveil(game: &mut Game, into_graveyard: bool) {
-    let decision = game
-        .observe(PlayerId::One)
-        .decision
-        .expect("the surveil is waiting");
-    let options = if into_graveyard {
-        vec![decision.options[0].id]
-    } else {
-        Vec::new()
-    };
-    game.apply(
-        PlayerId::One,
-        Action::ChooseDecision {
-            decision: decision.id,
-            options,
-        },
-    )
-    .unwrap();
-    drain_pending(game);
-}
-
 /// Player one's permanents made from `definition`.
 fn controlled(game: &Game, definition: CardDefinitionId) -> Vec<GameObjectId> {
     game.battlefield
@@ -214,15 +188,6 @@ fn tokens(game: &Game) -> Vec<&Permanent> {
 /// Whether the permanent `id` has `keyword`.
 fn has_keyword(game: &Game, id: GameObjectId, keyword: KeywordAbility) -> bool {
     game.permanent_has_executable_keyword(permanent(game, id), keyword)
-}
-
-/// The colors `permanent` is.
-fn colors(game: &Game, permanent: &Permanent) -> Vec<ManaColor> {
-    ManaColor::COLORS
-        .into_iter()
-        .zip(game.permanent_colors(permanent))
-        .filter_map(|(color, has)| has.then_some(color))
-        .collect()
 }
 
 /// Gives player one six mana of each color, more than any card here costs.
@@ -255,11 +220,58 @@ fn castable_targets(game: &Game, card: GameObjectId) -> Vec<Vec<Target>> {
         .collect()
 }
 
-/// The target lists of player one's legal activations of `source`'s ability
-/// whose text starts with `prefix`, one per activation.
-fn activation_targets(game: &Game, source: GameObjectId, prefix: &str) -> Vec<Vec<Target>> {
-    activations(game, source, prefix)
+/// Whether `permanent` is prepared.
+fn is_prepared(game: &Game, permanent: GameObjectId) -> bool {
+    game.battlefield
         .iter()
-        .map(announced_targets)
+        .find(|candidate| candidate.card.id == permanent)
+        .expect("the permanent is on the battlefield")
+        .designations
+        .contains(&PermanentDesignationDef::Prepared)
+}
+
+/// Everything `player` has in exile, by name.
+fn exiled_copies(game: &Game, player: PlayerId) -> Vec<(GameObjectId, String)> {
+    game.players[player.index()]
+        .exile
+        .iter()
+        .map(|card| {
+            (
+                card.id,
+                game.object_card_name(card.id)
+                    .expect("an exiled copy has a name")
+                    .into_owned(),
+            )
+        })
         .collect()
+}
+
+/// Puts player one's preparation card `definition` onto the battlefield,
+/// where it enters prepared, and returns that prepared permanent with the
+/// copy of its prepare spell `spell` that this made in exile.
+fn prepared_permanent(
+    game: &mut Game,
+    definition: CardDefinitionId,
+    spell: &str,
+) -> (GameObjectId, GameObjectId) {
+    let permanent = settled(game, definition);
+    assert!(is_prepared(game, permanent), "it enters prepared");
+    let copies = exiled_copies(game, PlayerId::One);
+    assert_eq!(copies.len(), 1, "one copy of its prepare spell");
+    assert_eq!(copies[0].1, spell);
+    (permanent, copies[0].0)
+}
+
+/// Player one casts the exiled prepare-spell copy `copy` at `targets` with
+/// mana to spare, leaving it on the stack.
+fn cast_copy(game: &mut Game, copy: GameObjectId, targets: &[Target]) {
+    mana_to_spare(game);
+    let action = casts(game, copy)
+        .into_iter()
+        .find(|action| {
+            matches!(action, Action::CastSpell { choices, .. }
+            if choices.iter_targets().eq(targets))
+        })
+        .expect("the copy can be cast at those targets");
+    game.apply(PlayerId::One, action).unwrap();
 }

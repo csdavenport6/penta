@@ -57,10 +57,6 @@ deck-list lookup alias. Define both modeled faces together with
 `CardRecord::new_dfc` for a transforming card or `CardRecord::new_mdfc` for a
 modal double-faced card; pass their named face rules directly to those
 constructors so they can derive the parts, topology, and play options.
-A [preparation card](#preparation-cards) is declared the same way with
-`CardRecord::new_prepare`, listing the permanent and then its prepare spell in
-both the header and the name, such as `// SOS 45 — Emeritus of Ideation //
-Ancestral Recall`.
 The header immediately starts the declaration block. Inline card-local
 cost, target, effect, ability, predicate, query, value, and collection directly
 in the `CardRecord` and its ordered `CardRules` clauses by default. A named
@@ -153,38 +149,11 @@ Card-specific composition and contained exceptions belong at the narrowest usefu
 ownership level. See the [effect-program guide](effect-programs.md).
 
 Card declarations are oblivious to the
-[prepared engine](prepared-engine.md). Do not add lowering flags, prepared
-executors, optimization hints, or constructors that select an execution path
-to a declaration or the card schema. Declare the semantic operation in the
-ordinary model. The prepared compiler may recognize that structure and lower
-it independently; unsupported structures continue through the reference
-implementation.
-
-That engine shares a word with a mechanic and nothing else, so keep the two
-vocabularies apart:
-
-- **The prepare mechanic (CR 722)** is named `prepare` or `preparation`: a
-  preparation card, its prepare spell, `CardRecord::new_prepare`,
-  `AlternateSpellKind::Prepare`, and `src/game/preparation.rs`. It says
-  *prepared* only where the rules print that word, and then always names the
-  thing that is prepared: the designation on a permanent
-  (`PermanentDesignationDef::Prepared`, `enters_prepared`, `become_prepared`)
-  or the spell copy it produces (`prepared_spell_copies`,
-  `prepared_cast_permission`).
-- **The prepared engine** is `src/prepared_engine` and its host in
-  `src/game/prepared_host.rs`. Its names say `prepared_engine` or name the
-  lowered artifact: a `Prepared<Thing>` type, a prepared program, predicate,
-  query, lane, or damage plan.
-
-When a new name needs the word *prepared*, its neighbor says which meaning
-applies: the permanent, spell, or copy that is prepared for the mechanic, or
-the artifact that was lowered for the engine. In prose and test names, write
-"preparation card", "prepare spell", or "prepared permanent" for the mechanic
-and "prepared engine" or "engine mode" for the engine. The engine guides call
-their own compile step "preparation"; read it that way there, and prefer
-"lowering" in new text.
-`CardRecord::new_prepare` is therefore an ordinary card-layout constructor like
-`new_dfc`, not one of the execution-path constructors ruled out above.
+[prepared engine](prepared-engine.md). Do not add preparation flags, prepared
+executors, optimization hints, or special constructors to a declaration or the
+card schema. Declare the semantic operation in the ordinary model. The
+prepared compiler may recognize that structure and lower it independently;
+unsupported structures continue through the reference implementation.
 
 ## Extension boundaries
 
@@ -660,9 +629,8 @@ will be implemented later:
 4. If an identity has only a standalone blocked audit row, either replace that
    row with the reprint comment and printing record, or turn it into a
    `unsupported` audit followed by a `CardRecord::new` whose rules are
-   `CardRules::unsupported()`. A [preparation card](#preparation-cards) uses
-   `CardRecord::new_prepare` with both parts unsupported instead, so that both
-   names exist. Preserve a useful existing capability-gap explanation. When there was no row, add the same unsupported declaration
+   `CardRules::unsupported()`. Preserve a useful existing capability-gap
+   explanation. When there was no row, add the same unsupported declaration
    with `Card rules have not been implemented.` as its honest initial audit.
 5. Put a new identity in the module for its first English-language paper set
    when possible, otherwise its earliest paper set, using that exact debut
@@ -717,17 +685,6 @@ of a targeted spell. Each constructor takes the complete cost slice directly.
 The surrounding procedure determines which expressions it can execute;
 keep its runtime-support validation honest when adding a new expression there.
 
-A resolving payment settles a plain cost only when
-`CostDef::resolving_payment_cost` narrows it. That includes a replacement
-program's own `PayOr`, any payment in an effect it performs, and payments in
-effect-created triggers. Catalog validation rejects any other cost there, and
-the payment procedure matches the narrowed type exhaustively. To support a new
-plain resolving cost, add it to that narrowing: the compiler then requires its
-settlement arm, and validation needs no edit. Repeated, labeled, and
-scalar-choice costs keep their own lanes. `RemoveCountersFromSource` is an
-activation cost only; a resolving payment cannot yet remove counters from its
-source.
-
 `NO_COSTS` (`&[]`) expresses an alternative paid without paying a mana cost,
 such as Omniscience. It differs from `&[CostDef::Mana(mana_cost!("{0}"))]`:
 only the latter includes a mana payment. CR 601.2g checks the complete selected
@@ -772,145 +729,6 @@ pool after activation costs, before any entry produces mana. Doubling Cube
 composes six entries, each counting and adding one matching type. Production
 creates new mana carrying the producing effect's source and payload; the count
 query does not copy restrictions, spend effects, or source properties.
-
-## Preparation cards
-
-A preparation card (CR 722) is one card with two sets of characteristics: the
-permanent, and the prepare spell printed in its inset frame. Declare both parts
-in one record, permanent first, the way a double-faced card names its faces:
-
-```rust
-// SOS 45 — Emeritus of Ideation // Ancestral Recall
-pub(in crate::card::sets) static EMERITUS_OF_IDEATION: CardRecord = CardRecord::new_prepare(
-    "Emeritus of Ideation // Ancestral Recall",
-    "75961d36-acf6-425f-9698-0bf52af74f31",
-    "Evyn Fong",
-    &[
-        (
-            "Emeritus of Ideation",
-            CardRules::new_creature(mana_cost!("{3}{U}{U}"), &["Human", "Wizard"], 5, 5)
-                .with_abilities(&[abilities::flying(), enters_prepared() /* ... */]),
-        ),
-        ("Ancestral Recall", catalog_lea::ANCESTRAL_RECALL.rules),
-    ],
-);
-```
-
-The constructor derives both named parts, the `AlternateSpell` topology, and a
-cast option per part through `CardComposition::alternate_spell`; do not write a
-`with_composition` closure for a preparation card. The record name is the
-combined `permanent // spell` name, which is also what a deck list uses. Unlike
-a double-faced card, the permanent's name alone is not a lookup alias.
-
-The constructor accepts `CardRules::unsupported()` for a part. Declare a new
-preparation card with both names as soon as it is inventoried, before it has
-rules: the prepare spell's name is only nameable (CR 722.5) once the second
-part exists. Until both parts are complete, leave both unsupported: an
-unsupported card exposes no executable clause, and the registry-integrity test
-rejects one with a castable part. Its audit comment names the gap in whichever
-part is missing.
-
-Give the prepare spell ordinary spell rules. When it is an existing card,
-reuse that record's rules as above. When one prepare spell is printed on
-several cards, share one rules constant in the set preamble so the copies
-agree. A printing that is still unsupported takes the constant when it
-becomes supported.
-
-The Secrets of Strixhaven module, where the mechanic debuted, owns the
-recurring clauses. Later sets import them from there:
-
-| Printed clause | Helper |
-| --- | --- |
-| "This creature enters prepared." | `enters_prepared()` |
-| The same, followed by the reminder text | `enters_prepared_with_reminder()` |
-| "... becomes prepared." | `become_prepared(recipient)` |
-| "... becomes unprepared." | `become_unprepared(recipient)` |
-| "At the beginning of your upkeep, if this creature isn't prepared, it becomes prepared." | `reprepare_at_upkeep()` |
-| The same, followed by the reminder text | `reprepare_at_upkeep_with_reminder()` |
-
-`enters_prepared()` and `reprepare_at_upkeep()` are whole ability clauses. Most
-printings follow the clause with the mechanic's reminder text, "(While it's
-prepared, you may cast a copy of its spell. Doing so unprepares it.)"; the
-`_with_reminder` forms carry it. A card that prints its own name instead of
-"this creature" keeps the helper and adds `.override_text(...)`.
-`become_prepared` and `become_unprepared` are effects: compose them into
-whatever trigger, activation, or payment the card prints, with
-`EffectRecipientDef::Source` for "this creature" or a target for "target
-creature becomes prepared".
-
-The designation and its exiled copy are the engine's job, not the card's:
-
-- A permanent without a prepare spell cannot become prepared, and a prepared
-  permanent cannot become prepared again. Neither helper needs a guard.
-- The copy in exile has only the printed prepare spell's characteristics, even
-  when the permanent is a token copy made with exceptions. It lasts while the
-  permanent is on the battlefield and prepared, and a permanent that phases in
-  prepared gets a new one.
-- Only the permanent's current controller may cast the copy, for the prepare
-  spell's own cost. Casting it unprepares the permanent whether or not the
-  spell later resolves. The physical card is never cast as its prepare spell.
-- Prepared is not a copiable value and does not depend on abilities. A
-  prepared permanent that loses its abilities or becomes a copy of something
-  else stays prepared.
-
-`src/game/tests/prepare_cards.rs` and `src/game/tests/woe_hob_preparation.rs`
-hold these rulings as regression tests; the former runs every case in both
-engine modes. A new preparation card needs a card-level test only for
-what its own clauses add.
-
-## Empower Jace
-
-Empower Jace N (CR 701.71) is a keyword action composed from ordinary effects.
-Use `sets::reality_fracture::empower_jace(amount)` wherever a clause says
-"empower Jace N", and keep the printed text and reminder text on that clause:
-
-```rust
-abilities::enters_trigger(
-    "When this creature enters, empower Jace 4. (Put four loyalty counters on a Jace \
-     token you control. If you don't control one, first create a blue Jace \
-     planeswalker token with \"[−1]: Surveil 1\" and \"[−3]: Draw a card.\")",
-    empower_jace(ValueDef::Constant(4)),
-)
-```
-
-The helper works out the amount, creates the token if you control no Jace
-planeswalker token, asks you to choose a Jace planeswalker token you control,
-and puts that many loyalty counters on it.
-
-- The amount is bound before the token is created, so "where X is the number
-  of ..." counts the board the instruction started from. Pass any `ValueDef`
-  the surrounding program can evaluate. A count bound by `WithZoneMoveResult`
-  is not "the number exiled this way": it includes a move that a replacement
-  effect redirected to another zone, which is why Overwrite the Multiverse
-  stays unsupported.
-- The choice is a characteristic query, not a list of tokens Empower made. Any
-  token that is a Jace planeswalker qualifies, including a token copy of a
-  nontoken Jace. A nontoken Jace never qualifies and does not stop the token
-  from being created.
-- The token has no printed loyalty and enters with none. Zero is safe only
-  until the counters land later in the same resolution, because state-based
-  actions are not checked in between. Empower Jace 0 creates a token that the
-  next state-based check puts into the graveyard (CR 704.5i).
-- Every Empower card creates the one `JACE_TOKEN` constant, whose abilities
-  are a single `static` array. Token identity compares the ability list by
-  address, so never declare a second Jace token inline: it would be a
-  different token.
-
-"Planeswalkers you control have '[cost]: ...'" uses the set's
-`planeswalkers_you_control_have(text, &ability)`, a `StaticApply` of
-`AppliedEffectDef::add_ability`. Give the granted ability a `CostDef::Loyalty`
-cost and it is a loyalty ability like the printed ones: it keeps loyalty
-timing, needs the loyalty it removes, and shares its planeswalker's one
-activation each turn (CR 606.3). One that adds mana is still
-`AbilityDef::activated`, never `activated_mana`; a loyalty ability uses the
-stack.
-
-`src/game/tests/empower_jace.rs` holds the Empower rulings and the granted
-loyalty limit as regression tests in both engine modes. A new Empower card
-needs a card-level test only for a value or condition it reads somewhere that
-file does not already cover: catalog validation can accept a value that an
-activation condition or event-time condition, which have no resolving object,
-evaluates as 0.
 
 ## Class level bars
 

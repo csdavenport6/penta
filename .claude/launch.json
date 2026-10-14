@@ -5,8 +5,7 @@
       "name": "penta-web",
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["--dir", "./web", "run", "dev"],
-      "port": 17524,
-      "env": { "PENTA_DEV_PORT": "17524" }
+      "port": 17524
     }
   ]
 }

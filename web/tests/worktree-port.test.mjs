@@ -1,5 +1,4 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
@@ -72,22 +71,6 @@ test("an environment override pins the port for every caller", () => {
   const env = { [devPortOverrideVariable]: "3000" };
   assert.equal(getWorktreeDevPort({ env }), 3000);
   assert.equal(getWorktreeDevPort({ env: { [devPortOverrideVariable]: " 8080 " } }), 8080);
-});
-
-test("the checked-in preview config pins the port it waits on", () => {
-  // The preview pane waits on the configured port. Without the override the
-  // server binds the worktree's own assignment and the pane never connects.
-  const { configurations } = JSON.parse(
-    readFileSync(new URL("../../.claude/launch.json", import.meta.url), "utf8"),
-  );
-
-  for (const { name, env, port } of configurations) {
-    assert.equal(
-      parseDevPortOverride(env?.[devPortOverrideVariable]),
-      port,
-      `${name} must pin ${devPortOverrideVariable} to its preview port`,
-    );
-  }
 });
 
 test("an absent or blank override falls back to the worktree assignment", () => {

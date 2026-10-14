@@ -288,10 +288,9 @@ and its rules together: name, cost, types, creature stats, and ordered ability
 clauses can all be understood at the card's declaration. Double-faced records
 use `CardRecord::new_dfc` or
 `CardRecord::new_mdfc` to declare both named faces together and derive their
-parts, topology, and play options. Preparation cards do the same for the
-permanent and its prepare spell with `CardRecord::new_prepare`. Other structured
-cards attach a `CardComposition`; an ordinary record receives an equivalent
-one-part composition automatically.
+parts, topology, and play options. Other structured cards attach a
+`CardComposition`; an ordinary record receives an equivalent one-part
+composition automatically.
 
 An `AbilityDef` owns one rules-text clause together with its explicit timing
 category, costs, targets, and structured effect.
